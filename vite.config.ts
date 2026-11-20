@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { mergeSyncPayloads, normalizePayload } from './shared/syncMerge.js';
 
@@ -105,9 +105,50 @@ function localMockKvPlugin() {
   };
 }
 
-export default defineConfig({
-  plugins: [vue(), localMockKvPlugin()],
-  server: {
-    port: 5173,
-  },
+function injectEnvScriptsPlugin(env) {
+  return {
+    name: 'inject-env-scripts',
+    transformIndexHtml() {
+      const tags = [];
+      const analyticsSrc = (env.VITE_ANALYTICS_SRC || '').trim();
+      const analyticsId = (env.VITE_ANALYTICS_WEBSITE_ID || '').trim();
+      const vercountSrc = (env.VITE_VERCOUNT_SRC || '').trim();
+
+      if (analyticsSrc) {
+        const attrs = { defer: true, src: analyticsSrc };
+        if (analyticsId) {
+          attrs['data-website-id'] = analyticsId;
+        }
+        tags.push({
+          tag: 'script',
+          attrs,
+          injectTo: 'head',
+        });
+      }
+
+      if (vercountSrc) {
+        tags.push({
+          tag: 'script',
+          attrs: { defer: true, src: vercountSrc },
+          injectTo: 'body',
+        });
+      }
+
+      return tags;
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const env = {
+    ...loadEnv(mode, __dirname, 'VITE_'),
+    ...process.env,
+  };
+
+  return {
+    plugins: [vue(), localMockKvPlugin(), injectEnvScriptsPlugin(env)],
+    server: {
+      port: 5173,
+    },
+  };
 });

@@ -5,6 +5,7 @@ import {
   Cloud,
   History,
   Moon,
+  ShieldCheck,
   SlidersHorizontal,
   Sun,
 } from '@lucide/vue';
@@ -44,9 +45,12 @@ import {
   pullCloudData,
   pushCloudData,
 } from './core/sync';
+import { getSiteConfig } from './core/siteConfig';
 import { mergeSyncPayloads } from '../shared/syncMerge.js';
 
 type TabKey = 'calculator' | 'presets' | 'history';
+
+const siteConfig = getSiteConfig();
 
 const activeTab = ref<TabKey>('calculator');
 const customPresets = ref<Preset[]>(loadCustomPresets());
@@ -189,6 +193,7 @@ function handleDisconnectSync() {
 function handleSaveRecord(payload: {
   paperName: string;
   note: string;
+  examDate: string;
   mode: InputMode;
   inputs: Record<string, number>;
   preset: Preset;
@@ -205,6 +210,7 @@ function handleSaveRecord(payload: {
         ...records.value[idx],
         paperName: payload.paperName,
         note: payload.note,
+        examDate: payload.examDate,
         updatedAt: now,
         mode: payload.mode,
         inputs: payload.inputs,
@@ -222,6 +228,7 @@ function handleSaveRecord(payload: {
     id: createId('rec'),
     paperName: payload.paperName,
     note: payload.note,
+    examDate: payload.examDate,
     createdAt: now,
     updatedAt: now,
     mode: payload.mode,
@@ -250,7 +257,7 @@ function handleLoadRecord(rec: HistoryRecord) {
   if (customPresets.value.some((p) => p.id === snapshot.id && !p.deletedAt)) {
     activePresetId.value = snapshot.id;
   }
-  loadedRecord.value = rec;
+  loadedRecord.value = { ...rec };
   activeTab.value = 'calculator';
   showToast(`已载入「${rec.paperName}」`);
 }
@@ -273,6 +280,7 @@ function handleUpdateRecordMeta(payload: {
   id: string;
   paperName: string;
   note: string;
+  examDate: string;
 }) {
   const idx = records.value.findIndex((r) => r.id === payload.id);
   if (idx === -1) return;
@@ -280,6 +288,7 @@ function handleUpdateRecordMeta(payload: {
     ...records.value[idx],
     paperName: payload.paperName,
     note: payload.note,
+    examDate: payload.examDate,
     updatedAt: Date.now(),
   };
   persistLocal();
@@ -376,7 +385,20 @@ onMounted(async () => {
           </div>
           <div>
             <h1 class="brand-title">行测分数计算器</h1>
-            <p class="brand-sub">自定义分值预设 · 双模式算分 · 云端记录</p>
+            <div v-if="siteConfig.topLinks.length > 0" class="brand-links">
+              <template
+                v-for="(link, idx) in siteConfig.topLinks"
+                :key="link.url + idx"
+              >
+                <span v-if="idx > 0" class="brand-links-sep">·</span>
+                <a :href="link.url" target="_blank" rel="noreferrer">
+                  {{ link.label }}
+                </a>
+              </template>
+            </div>
+            <p v-else class="brand-sub">
+              自定义分值预设 · 双模式算分 · 云端记录
+            </p>
           </div>
         </div>
 
@@ -469,6 +491,50 @@ onMounted(async () => {
         @export-backup="handleExportBackup"
       />
     </main>
+
+    <!-- 备案号与站点访问量统计页脚（通过 VITE_* 环境变量按需启用） -->
+    <footer v-if="siteConfig.hasFooter" class="site-footer">
+      <div class="site-footer-inner">
+        <div
+          v-if="siteConfig.mpsBeianText || siteConfig.icpBeianText"
+          class="beian-links"
+        >
+          <span v-if="siteConfig.mpsBeianText" class="nav-item">
+            <a
+              class="nav-link"
+              :href="siteConfig.mpsBeianUrl"
+              rel="noreferrer"
+              target="_blank"
+            >
+              <img
+                src="https://beian.mps.gov.cn/web/assets/logo01.6189a29f.png"
+                alt="公安备案图标"
+                class="beian-icon"
+              />
+              <span>{{ siteConfig.mpsBeianText }}</span>
+            </a>
+          </span>
+          <span v-if="siteConfig.icpBeianText" class="nav-item">
+            <a
+              class="nav-link"
+              :href="siteConfig.icpBeianUrl"
+              rel="noreferrer"
+              target="_blank"
+            >
+              <ShieldCheck :size="15" style="color: #409eff; flex-shrink: 0" aria-hidden="true" />
+              <span>{{ siteConfig.icpBeianText }}</span>
+            </a>
+          </span>
+        </div>
+
+        <div v-if="siteConfig.vercountEnabled" class="vercount-stats tabular">
+          本站总访问量
+          <span id="vercount_value_site_pv" class="vercount-num">--</span> 次 ·
+          本站总访客数
+          <span id="vercount_value_site_uv" class="vercount-num">--</span> 人
+        </div>
+      </div>
+    </footer>
 
     <SyncModal
       :open="syncModalOpen"

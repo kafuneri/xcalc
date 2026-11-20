@@ -6,7 +6,9 @@ import {
   RotateCcw,
   Save,
   Settings2,
+  Sparkles,
 } from '@lucide/vue';
+import ModuleStepper from './ModuleStepper.vue';
 import type { CalculationResult, HistoryRecord, InputMode, Preset } from '../types';
 import {
   calculateScore,
@@ -15,10 +17,22 @@ import {
   createZeroInputs,
   formatAccuracy,
   formatScore,
-  getLeafModules,
   getPresetTotals,
+  hasEnteredInputs,
   isParentModule,
+  migrateInputsBetweenPresets,
 } from '../core/calc';
+import {
+  PAPER_INDEXES,
+  PAPER_LEVELS,
+  PAPER_REGIONS_ALPHA,
+  PAPER_REGIONS_PINNED,
+  PAPER_TYPES,
+  PAPER_YEARS,
+  buildPresetPaperName,
+  getLocalDateString,
+  type PaperNameParts,
+} from '../presets/paperName';
 
 const props = defineProps<{
   presets: Preset[];
@@ -32,6 +46,7 @@ const emit = defineEmits<{
     payload: {
       paperName: string;
       note: string;
+      examDate: string;
       mode: InputMode;
       inputs: Record<string, number>;
       preset: Preset;
@@ -50,7 +65,17 @@ const invalidMap = reactive<Record<string, boolean>>({});
 
 const paperName = ref('');
 const note = ref('');
+const recordDate = ref(getLocalDateString());
 const saveError = ref('');
+
+const showNameBuilder = ref(true);
+const nameParts = reactive<PaperNameParts>({
+  year: '',
+  region: '',
+  level: '',
+  paperType: '',
+  index: '',
+});
 
 const currentPreset = computed<Preset>(() => {
   return (
@@ -60,16 +85,16 @@ const currentPreset = computed<Preset>(() => {
 
 const presetSummary = computed(() => getPresetTotals(currentPreset.value));
 
-// Sync inputs shape when preset changes
+// Preserve entered module counts by ID first, then by module name when switching presets
 watch(
   currentPreset,
-  (preset) => {
-    const next: Record<string, number> = {};
-    for (const leaf of getLeafModules(preset.modules)) {
-      const existing = inputs.value[leaf.id];
-      next[leaf.id] = clampModuleInput(existing ?? 0, leaf.questionCount);
-    }
-    inputs.value = next;
+  (nextPreset, prevPreset) => {
+    inputs.value = migrateInputsBetweenPresets(
+      prevPreset,
+      nextPreset,
+      inputs.value
+    );
+    Object.keys(invalidMap).forEach((k) => delete invalidMap[k]);
   },
   { immediate: true }
 );
@@ -80,18 +105,18 @@ watch(
   (rec) => {
     if (!rec) return;
     mode.value = rec.mode;
-    const next: Record<string, number> = {};
-    for (const leaf of getLeafModules(currentPreset.value.modules)) {
-      next[leaf.id] = clampModuleInput(
-        rec.inputs[leaf.id] ?? 0,
-        leaf.questionCount
-      );
-    }
-    inputs.value = next;
+    inputs.value = migrateInputsBetweenPresets(
+      rec.presetSnapshot,
+      currentPreset.value,
+      rec.inputs
+    );
     paperName.value = rec.paperName;
     note.value = rec.note;
+    recordDate.value = rec.examDate || getLocalDateString(rec.createdAt);
     saveError.value = '';
-  }
+    Object.keys(invalidMap).forEach((k) => delete invalidMap[k]);
+  },
+  { flush: 'post' }
 );
 
 const result = computed(() =>
@@ -113,12 +138,16 @@ const resultByModuleId = computed(() => {
 
 function switchMode(nextMode: InputMode) {
   if (mode.value === nextMode) return;
-  inputs.value = convertInputsMode(
-    currentPreset.value,
-    inputs.value,
-    mode.value,
-    nextMode
-  );
+  if (hasEnteredInputs(inputs.value)) {
+    inputs.value = convertInputsMode(
+      currentPreset.value,
+      inputs.value,
+      mode.value,
+      nextMode
+    );
+  } else {
+    inputs.value = createZeroInputs(currentPreset.value);
+  }
   Object.keys(invalidMap).forEach((k) => delete invalidMap[k]);
   mode.value = nextMode;
 }
@@ -163,32 +192,46 @@ function focusNextInput(event: KeyboardEvent) {
   }
 }
 
-function selectAllOnFocus(event: FocusEvent) {
-  const target = event.target as HTMLInputElement | null;
-  target?.select();
+function applyPresetNameParts() {
+  const built = buildPresetPaperName(nameParts);
+  if (built) {
+    paperName.value = built;
+  }
+}
+
+function clearNameParts() {
+  nameParts.year = '';
+  nameParts.region = '';
+  nameParts.level = '';
+  nameParts.paperType = '';
+  nameParts.index = '';
 }
 
 function handleSave(overwrite = false) {
   saveError.value = '';
   const trimmedName = paperName.value.trim();
   if (!trimmedName) {
-    saveError.value = '请先输入试卷名称（例如：2025国考地市级真题）';
+    saveError.value = '请输入试卷名称（例如：2025年国考地市级行测真题）';
     return;
   }
 
   emit('saveRecord', {
     paperName: trimmedName,
     note: note.value.trim(),
+    examDate: recordDate.value || getLocalDateString(),
     mode: mode.value,
     inputs: { ...inputs.value },
     preset: currentPreset.value,
     result: result.value,
-    overwriteRecordId: overwrite && props.loadedRecord ? props.loadedRecord.id : undefined,
+    overwriteRecordId:
+      overwrite && props.loadedRecord ? props.loadedRecord.id : undefined,
   });
 
   if (!overwrite) {
     paperName.value = '';
     note.value = '';
+    recordDate.value = getLocalDateString();
+    clearNameParts();
   }
   emit('clearLoadedRecord');
 }
@@ -215,7 +258,7 @@ function handleSave(overwrite = false) {
       <div class="card-body">
         <div class="calc-toolbar">
           <div>
-            <label class="field-label">当前分值预设</label>
+            <label class="field-label">当前分值预设（切换时保留已填题数）</label>
             <select
               class="select"
               :value="currentPreset.id"
@@ -321,9 +364,7 @@ function handleSave(overwrite = false) {
 
                 <div class="module-score-col tabular">
                   <div class="module-score-val">
-                    {{
-                      formatScore(resultByModuleId.get(mod.id)?.score ?? 0)
-                    }}
+                    {{ resultByModuleId.get(mod.id)?.correctCount ?? 0 }}
                     <span
                       style="
                         font-weight: 400;
@@ -331,15 +372,10 @@ function handleSave(overwrite = false) {
                         color: var(--text-muted);
                       "
                     >
-                      /
-                      {{
-                        formatScore(
-                          resultByModuleId.get(mod.id)?.maxScore ?? 0
-                        )
-                      }}
+                      / {{ resultByModuleId.get(mod.id)?.questionCount ?? 0 }}
                     </span>
                   </div>
-                  <div class="module-score-sub">模块合计</div>
+                  <div class="module-score-sub">正确数 / 总题数</div>
                 </div>
               </div>
 
@@ -360,57 +396,19 @@ function handleSave(overwrite = false) {
                     </div>
                   </div>
 
-                  <div>
-                    <div class="stepper">
-                      <button
-                        type="button"
-                        class="stepper-btn"
-                        :disabled="(inputs[child.id] ?? 0) <= 0"
-                        @click="stepLeafInput(child.id, child.questionCount, -1)"
-                      >
-                        −
-                      </button>
-                      <input
-                        type="number"
-                        inputmode="numeric"
-                        min="0"
-                        :max="child.questionCount"
-                        class="stepper-input tabular"
-                        :class="{ invalid: invalidMap[child.id] }"
-                        :value="inputs[child.id] ?? 0"
-                        :aria-label="`${child.name}${mode === 'wrong' ? '错题数' : '正确数'}`"
-                        @focus="selectAllOnFocus"
-                        @input="
-                          setLeafInput(
-                            child.id,
-                            child.questionCount,
-                            ($event.target as HTMLInputElement).value
-                          )
-                        "
-                        @keydown.enter.prevent="focusNextInput"
-                      />
-                      <button
-                        type="button"
-                        class="stepper-btn"
-                        :disabled="(inputs[child.id] ?? 0) >= child.questionCount"
-                        @click="stepLeafInput(child.id, child.questionCount, 1)"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <div
-                      v-if="invalidMap[child.id]"
-                      style="font-size: 11px; color: var(--danger); margin-top: 2px"
-                    >
-                      范围 0~{{ child.questionCount }}
-                    </div>
-                  </div>
+                  <ModuleStepper
+                    :value="inputs[child.id] ?? 0"
+                    :max="child.questionCount"
+                    :invalid="invalidMap[child.id]"
+                    :label="`${child.name}${mode === 'wrong' ? '错题数' : '正确数'}`"
+                    @change="setLeafInput(child.id, child.questionCount, $event)"
+                    @step="stepLeafInput(child.id, child.questionCount, $event)"
+                    @enter="focusNextInput"
+                  />
 
                   <div class="module-score-col tabular">
                     <div class="module-score-val">
-                      {{
-                        formatScore(resultByModuleId.get(child.id)?.score ?? 0)
-                      }}
+                      {{ resultByModuleId.get(child.id)?.correctCount ?? 0 }}
                       <span
                         style="
                           font-weight: 400;
@@ -418,12 +416,7 @@ function handleSave(overwrite = false) {
                           color: var(--text-muted);
                         "
                       >
-                        /
-                        {{
-                          formatScore(
-                            resultByModuleId.get(child.id)?.maxScore ?? 0
-                          )
-                        }}
+                        / {{ child.questionCount }}
                       </span>
                     </div>
                     <div class="module-score-sub">
@@ -451,55 +444,19 @@ function handleSave(overwrite = false) {
                   </div>
                 </div>
 
-                <div>
-                  <div class="stepper">
-                    <button
-                      type="button"
-                      class="stepper-btn"
-                      :disabled="(inputs[mod.id] ?? 0) <= 0"
-                      @click="stepLeafInput(mod.id, mod.questionCount, -1)"
-                    >
-                      −
-                    </button>
-                    <input
-                      type="number"
-                      inputmode="numeric"
-                      min="0"
-                      :max="mod.questionCount"
-                      class="stepper-input tabular"
-                      :class="{ invalid: invalidMap[mod.id] }"
-                      :value="inputs[mod.id] ?? 0"
-                      :aria-label="`${mod.name}${mode === 'wrong' ? '错题数' : '正确数'}`"
-                      @focus="selectAllOnFocus"
-                      @input="
-                        setLeafInput(
-                          mod.id,
-                          mod.questionCount,
-                          ($event.target as HTMLInputElement).value
-                        )
-                      "
-                      @keydown.enter.prevent="focusNextInput"
-                    />
-                    <button
-                      type="button"
-                      class="stepper-btn"
-                      :disabled="(inputs[mod.id] ?? 0) >= mod.questionCount"
-                      @click="stepLeafInput(mod.id, mod.questionCount, 1)"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <div
-                    v-if="invalidMap[mod.id]"
-                    style="font-size: 11px; color: var(--danger); margin-top: 2px"
-                  >
-                    范围 0~{{ mod.questionCount }}
-                  </div>
-                </div>
+                <ModuleStepper
+                  :value="inputs[mod.id] ?? 0"
+                  :max="mod.questionCount"
+                  :invalid="invalidMap[mod.id]"
+                  :label="`${mod.name}${mode === 'wrong' ? '错题数' : '正确数'}`"
+                  @change="setLeafInput(mod.id, mod.questionCount, $event)"
+                  @step="stepLeafInput(mod.id, mod.questionCount, $event)"
+                  @enter="focusNextInput"
+                />
 
                 <div class="module-score-col tabular">
                   <div class="module-score-val">
-                    {{ formatScore(resultByModuleId.get(mod.id)?.score ?? 0) }}
+                    {{ resultByModuleId.get(mod.id)?.correctCount ?? 0 }}
                     <span
                       style="
                         font-weight: 400;
@@ -507,12 +464,7 @@ function handleSave(overwrite = false) {
                         color: var(--text-muted);
                       "
                     >
-                      /
-                      {{
-                        formatScore(
-                          resultByModuleId.get(mod.id)?.maxScore ?? 0
-                        )
-                      }}
+                      / {{ mod.questionCount }}
                     </span>
                   </div>
                   <div class="module-score-sub">
@@ -536,8 +488,10 @@ function handleSave(overwrite = false) {
           "
         >
           提示：当前为「{{
-            mode === 'wrong' ? '错题数模式（默认0代表全对）' : '正确数模式（默认0代表全错）'
-          }}」，按 Enter 键可快速跳到下一模块输入框。
+            mode === 'wrong'
+              ? '错题数模式（默认0代表全对）'
+              : '正确数模式（默认0代表全错）'
+          }}」，按 Enter 键可快速跳到下一模块输入框；切换预设会自动保留各模块已填题数。
         </p>
       </div>
     </div>
@@ -599,21 +553,139 @@ function handleSave(overwrite = false) {
       <div class="card">
         <div class="card-header">
           <span style="font-weight: 700; font-size: 14px">保存本次套卷记录</span>
+          <button
+            class="btn btn-sm"
+            type="button"
+            @click="showNameBuilder = !showNameBuilder"
+          >
+            <Sparkles :size="13" />
+            <span>{{ showNameBuilder ? '收起命名预设' : '预设名称' }}</span>
+          </button>
         </div>
         <div
           class="card-body"
           style="display: flex; flex-direction: column; gap: 10px"
         >
+          <!-- Optional 5-part Paper Name Builder -->
+          <div v-if="showNameBuilder" class="name-preset-box">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 6px;
+              "
+            >
+              <span style="font-size: 12px; font-weight: 600; color: var(--text-secondary)">
+                快速拼装试卷名称（可选，拼装后可继续手动修改）
+              </span>
+              <button
+                class="btn btn-sm"
+                style="padding: 2px 8px; font-size: 11px"
+                type="button"
+                @click="clearNameParts"
+              >
+                清空选项
+              </button>
+            </div>
+            <div class="name-preset-grid">
+              <select
+                v-model="nameParts.year"
+                class="select select-sm"
+                aria-label="年份"
+                @change="applyPresetNameParts"
+              >
+                <option value="">年份(不限)</option>
+                <option v-for="y in PAPER_YEARS" :key="y" :value="y">
+                  {{ y }}年
+                </option>
+              </select>
+
+              <select
+                v-model="nameParts.region"
+                class="select select-sm"
+                aria-label="省份或考区"
+                @change="applyPresetNameParts"
+              >
+                <option value="">省份/考区</option>
+                <optgroup label="置顶常用">
+                  <option
+                    v-for="r in PAPER_REGIONS_PINNED"
+                    :key="`pin-${r}`"
+                    :value="r"
+                  >
+                    {{ r }}
+                  </option>
+                </optgroup>
+                <optgroup label="按拼音首字母排序">
+                  <option
+                    v-for="r in PAPER_REGIONS_ALPHA"
+                    :key="`az-${r}`"
+                    :value="r"
+                  >
+                    {{ r }}
+                  </option>
+                </optgroup>
+              </select>
+
+              <select
+                v-model="nameParts.level"
+                class="select select-sm"
+                aria-label="试卷类型"
+                @change="applyPresetNameParts"
+              >
+                <option value="">类型(不限)</option>
+                <option v-for="lvl in PAPER_LEVELS" :key="lvl" :value="lvl">
+                  {{ lvl }}
+                </option>
+              </select>
+
+              <select
+                v-model="nameParts.paperType"
+                class="select select-sm"
+                aria-label="题型分类"
+                @change="applyPresetNameParts"
+              >
+                <option value="">真题/模拟</option>
+                <option v-for="t in PAPER_TYPES" :key="t" :value="t">
+                  {{ t }}
+                </option>
+              </select>
+
+              <select
+                v-model="nameParts.index"
+                class="select select-sm"
+                aria-label="序号"
+                @change="applyPresetNameParts"
+              >
+                <option value="">序号(无)</option>
+                <option v-for="idx in PAPER_INDEXES" :key="idx" :value="idx">
+                  {{ idx }}
+                </option>
+              </select>
+            </div>
+          </div>
+
           <div>
             <label class="field-label">试卷名称 *</label>
             <input
               v-model="paperName"
               class="input"
               type="text"
-              placeholder="例如：2025国考地市级真题 / 模考第8季"
+              placeholder="例如：2025年国考地市级行测真题 / 粉笔模考第8季"
               @keyup.enter="handleSave(Boolean(loadedRecord))"
             />
           </div>
+
+          <div>
+            <label class="field-label">保存日期（自动填入今日，可修改）</label>
+            <input
+              v-model="recordDate"
+              class="input tabular"
+              type="date"
+            />
+          </div>
+
           <div>
             <label class="field-label">备注（选填）</label>
             <textarea

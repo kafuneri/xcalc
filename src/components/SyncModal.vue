@@ -101,8 +101,12 @@ function handleConnect() {
           {{ envBadge.text }}
         </div>
 
+        <div class="alert-box alert-danger">
+          <strong>测试功能提示：</strong>云端同步目前处于测试阶段，云端存储数据不做持久性或稳定性保证，请注意定期通过本地「导出备份」留存数据副本。
+        </div>
+
         <div class="alert-box alert-info">
-          <strong>免注册多用户隔离：</strong>你和朋友可各自输入专属的「空间名称 + 口令」。前端会在本地计算 SHA-256 哈希后作为云端存储键，不同人的预设和历史试卷彼此完全隔离，换设备输入相同信息即可恢复。
+          <strong>使用说明：</strong>不同用户可各自输入专属的「空间名称 + 同步口令」。前端会在本地计算 SHA-256 哈希后作为云端存储键，不同用户的预设和历史试卷彼此完全隔离，换设备输入相同信息即可恢复。
         </div>
 
         <div>

@@ -1,6 +1,7 @@
 # Tencent Cloud EdgeOne
 .env
 .env.*
+!.env.example
 .edgeone/*
 .tef_dist/*
 

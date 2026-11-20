@@ -11,6 +11,7 @@ import {
 } from '@lucide/vue';
 import type { HistoryRecord } from '../types';
 import { formatAccuracy, formatScore } from '../core/calc';
+import { getLocalDateString } from '../presets/paperName';
 
 const props = defineProps<{
   records: HistoryRecord[];
@@ -19,7 +20,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   loadRecord: [record: HistoryRecord];
   deleteRecord: [id: string];
-  updateMeta: [payload: { id: string; paperName: string; note: string }];
+  updateMeta: [
+    payload: { id: string; paperName: string; note: string; examDate: string },
+  ];
   exportBackup: [];
 }>();
 
@@ -27,19 +30,29 @@ const searchQuery = ref('');
 const expandedIds = reactive<Record<string, boolean>>({});
 const editingMetaId = ref<string | null>(null);
 const editPaperName = ref('');
+const editExamDate = ref('');
 const editNote = ref('');
+
+function getRecordDateKey(rec: HistoryRecord): string {
+  return rec.examDate || getLocalDateString(rec.createdAt);
+}
 
 const filteredRecords = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   const active = props.records
     .filter((r) => !r.deletedAt)
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .sort((a, b) => {
+      const dateCmp = getRecordDateKey(b).localeCompare(getRecordDateKey(a));
+      if (dateCmp !== 0) return dateCmp;
+      return b.createdAt - a.createdAt;
+    });
   if (!q) return active;
   return active.filter(
     (r) =>
       r.paperName.toLowerCase().includes(q) ||
       r.note.toLowerCase().includes(q) ||
-      r.presetSnapshot.name.toLowerCase().includes(q)
+      r.presetSnapshot.name.toLowerCase().includes(q) ||
+      getRecordDateKey(r).includes(q)
   );
 });
 
@@ -50,13 +63,19 @@ function toggleExpand(id: string) {
 function startEditMeta(rec: HistoryRecord) {
   editingMetaId.value = rec.id;
   editPaperName.value = rec.paperName;
+  editExamDate.value = getRecordDateKey(rec);
   editNote.value = rec.note;
 }
 
 function saveEditMeta(id: string) {
   const name = editPaperName.value.trim();
   if (!name) return;
-  emit('updateMeta', { id, paperName: name, note: editNote.value.trim() });
+  emit('updateMeta', {
+    id,
+    paperName: name,
+    note: editNote.value.trim(),
+    examDate: editExamDate.value || getLocalDateString(),
+  });
   editingMetaId.value = null;
 }
 
@@ -64,16 +83,6 @@ function confirmDelete(rec: HistoryRecord) {
   if (window.confirm(`确定删除「${rec.paperName}」的这条成绩记录吗？`)) {
     emit('deleteRecord', rec.id);
   }
-}
-
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 </script>
 
@@ -97,7 +106,7 @@ function formatTime(ts: number): string {
             class="input"
             style="padding-left: 32px"
             type="text"
-            placeholder="搜索试卷名称、备注或预设名称..."
+            placeholder="搜索试卷名称、日期、备注或预设名称..."
           />
         </div>
 
@@ -118,10 +127,10 @@ function formatTime(ts: number): string {
       style="text-align: center; padding: 48px 20px; color: var(--text-muted)"
     >
       <p style="margin: 0 0 6px; font-size: 15px; font-weight: 600">
-        {{ searchQuery ? '没有匹配的历史记录' : '还没有保存过试卷记录' }}
+        {{ searchQuery ? '没有匹配的历史记录' : '暂无历史套卷记录' }}
       </p>
       <p style="margin: 0; font-size: 13px">
-        在「分数计算」页面对完答案并填写试卷名称保存后，即可在这里随时查看和回顾各模块明细。
+        在「分数计算」页面填写答题情况及试卷名称后保存，即可查看并回顾各模块明细。
       </p>
     </div>
 
@@ -135,6 +144,7 @@ function formatTime(ts: number): string {
           <template v-if="editingMetaId === rec.id">
             <div style="display: flex; flex-direction: column; gap: 8px; max-width: 460px">
               <input v-model="editPaperName" class="input" placeholder="试卷名称" />
+              <input v-model="editExamDate" class="input tabular" type="date" />
               <input v-model="editNote" class="input" placeholder="备注" />
               <div style="display: flex; gap: 6px">
                 <button
@@ -161,6 +171,7 @@ function formatTime(ts: number): string {
               <span class="pill pill-neutral">{{ rec.presetSnapshot.name }}</span>
             </div>
             <div
+              class="tabular"
               style="
                 margin-top: 4px;
                 font-size: 12px;
@@ -170,7 +181,7 @@ function formatTime(ts: number): string {
                 flex-wrap: wrap;
               "
             >
-              <span>{{ formatTime(rec.createdAt) }}</span>
+              <span>{{ getRecordDateKey(rec) }}</span>
               <span v-if="rec.note" style="color: var(--text-secondary)">
                 备注：{{ rec.note }}
               </span>
@@ -209,7 +220,7 @@ function formatTime(ts: number): string {
             <button
               class="btn btn-sm"
               type="button"
-              title="修改名称与备注"
+              title="修改名称、日期与备注"
               @click="startEditMeta(rec)"
             >
               <Edit3 :size="14" />

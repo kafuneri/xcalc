@@ -1,8 +1,8 @@
 {
-  "installCommand": "pnpm install",
+  "nodeVersion": "24.18.0",
+  "installCommand": "npm install -g pnpm@10.25.0 && pnpm install",
   "buildCommand": "pnpm run build",
-  "outputDirectory": "./dist",
-  "nodeVersion": "22.11.0",
+  "outputDirectory": "dist",
   "headers": [
     {
       "source": "/api/*",

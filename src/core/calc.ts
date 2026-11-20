@@ -237,6 +237,49 @@ export function createZeroInputs(preset: Pick<Preset, 'modules'>): Record<string
   return inputs;
 }
 
+/**
+ * Returns true if the user has entered any non-zero question count.
+ */
+export function hasEnteredInputs(inputs: Record<string, number>): boolean {
+  return Object.values(inputs).some((v) => Number(v) > 0);
+}
+
+/**
+ * Preserve user inputs across preset switches by matching module ID first,
+ * then falling back to trimmed module name (clamped to the new questionCount).
+ */
+export function migrateInputsBetweenPresets(
+  fromPreset: Pick<Preset, 'modules'> | null | undefined,
+  toPreset: Pick<Preset, 'modules'>,
+  prevInputs: Record<string, number>
+): Record<string, number> {
+  const byName = new Map<string, number>();
+
+  if (fromPreset) {
+    for (const leaf of getLeafModules(fromPreset.modules)) {
+      const val = prevInputs[leaf.id];
+      if (typeof val === 'number' && Number.isFinite(val)) {
+        const key = leaf.name.trim().toLowerCase();
+        if (!byName.has(key)) {
+          byName.set(key, val);
+        }
+      }
+    }
+  }
+
+  const next: Record<string, number> = {};
+  for (const leaf of getLeafModules(toPreset.modules)) {
+    const q = Math.max(0, Math.floor(Number(leaf.questionCount) || 0));
+    const direct = prevInputs[leaf.id];
+    const matched =
+      typeof direct === 'number' && Number.isFinite(direct)
+        ? direct
+        : byName.get(leaf.name.trim().toLowerCase()) ?? 0;
+    next[leaf.id] = clampModuleInput(matched, q);
+  }
+  return next;
+}
+
 export function clonePreset(preset: Preset): Preset {
   return JSON.parse(JSON.stringify(preset)) as Preset;
 }

@@ -47,6 +47,8 @@ export interface HistoryRecord {
   id: string;
   paperName: string;
   note: string;
+  /** User-editable exam/save date in YYYY-MM-DD format */
+  examDate?: string;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
