@@ -171,7 +171,20 @@ function localApiPlugin(allEnv) {
             try {
               const bodyText = await readRequestBody(req);
               const incoming = JSON.parse(bodyText);
-              const merged = mergeSyncPayloads(incoming, store[kvKey] ?? null);
+              const existing = store[kvKey] ?? null;
+              const merged = mergeSyncPayloads(incoming, existing);
+              if (!existing && merged.presets.length === 0 && merged.records.length === 0) {
+                return sendJson(res, 200, { ok: true, skippedEmpty: true, payload: merged });
+              }
+              if (!existing) {
+                const totalUsers = Object.keys(store).filter((k) => k.startsWith('u:')).length;
+                if (totalUsers >= 2000) {
+                  return sendJson(res, 403, {
+                    error: 'USER_LIMIT_REACHED',
+                    message: '云端同步名额已满（上限 2000 个空间），暂不支持新建空间。',
+                  });
+                }
+              }
               store[kvKey] = merged;
               writeLocalKvStore(store);
               return sendJson(res, 200, { ok: true, payload: merged });

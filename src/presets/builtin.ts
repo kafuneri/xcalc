@@ -355,6 +355,116 @@ export const BUILTIN_PRESETS: Preset[] = [
     ],
   },
   {
+    id: 'preset-2025hb-130',
+    name: '河北省考（2025）',
+    category: 'xingce',
+    description:
+      '改革后梯度模型（130题·100分）：政理20×0.65 / 常识10×0.5 / 言语35×0.8 / 数量15×0.8 / 资料20×1.0；判断30题细分图5×0.7·定10×0.75·类5×0.6·逻10×0.8。',
+    builtIn: true,
+    updatedAt: 1,
+    modules: [
+      { id: 'mod-25hb-politics', name: '政治理论', questionCount: 20, scorePerQuestion: 0.65 },
+      { id: 'mod-25hb-commonsense', name: '常识判断', questionCount: 10, scorePerQuestion: 0.5 },
+      { id: 'mod-25hb-verbal', name: '言语理解与表达', questionCount: 35, scorePerQuestion: 0.8 },
+      { id: 'mod-25hb-quant', name: '数量关系', questionCount: 15, scorePerQuestion: 0.8 },
+      {
+        id: 'mod-25hb-reasoning',
+        name: '判断推理',
+        questionCount: 30,
+        scorePerQuestion: 0,
+        children: [
+          { id: 'sub-25hb-graph', name: '图形推理', questionCount: 5, scorePerQuestion: 0.7 },
+          { id: 'sub-25hb-def', name: '定义判断', questionCount: 10, scorePerQuestion: 0.75 },
+          { id: 'sub-25hb-analogy', name: '类比推理', questionCount: 5, scorePerQuestion: 0.6 },
+          { id: 'sub-25hb-logic', name: '逻辑判断', questionCount: 10, scorePerQuestion: 0.8 },
+        ],
+      },
+      { id: 'mod-25hb-data', name: '资料分析', questionCount: 20, scorePerQuestion: 1 },
+    ],
+  },
+  {
+    id: 'preset-2024hb-130',
+    name: '河北省考（2024）',
+    category: 'xingce',
+    description:
+      '改革前经典模型（130题·100分）：常识20×0.5 / 言语40×0.8 / 数量15×0.8 / 资料20×1.0；判断35题细分图5×0.8·定10×0.8·类10×0.6·逻10×0.8。',
+    builtIn: true,
+    updatedAt: 1,
+    modules: [
+      { id: 'mod-24hb-commonsense', name: '常识判断', questionCount: 20, scorePerQuestion: 0.5 },
+      { id: 'mod-24hb-verbal', name: '言语理解与表达', questionCount: 40, scorePerQuestion: 0.8 },
+      { id: 'mod-24hb-quant', name: '数量关系', questionCount: 15, scorePerQuestion: 0.8 },
+      {
+        id: 'mod-24hb-reasoning',
+        name: '判断推理',
+        questionCount: 35,
+        scorePerQuestion: 0,
+        children: [
+          { id: 'sub-24hb-graph', name: '图形推理', questionCount: 5, scorePerQuestion: 0.8 },
+          { id: 'sub-24hb-def', name: '定义判断', questionCount: 10, scorePerQuestion: 0.8 },
+          { id: 'sub-24hb-analogy', name: '类比推理', questionCount: 10, scorePerQuestion: 0.6 },
+          { id: 'sub-24hb-logic', name: '逻辑判断', questionCount: 10, scorePerQuestion: 0.8 },
+        ],
+      },
+      { id: 'mod-24hb-data', name: '资料分析', questionCount: 20, scorePerQuestion: 1 },
+    ],
+  },
+  {
+    id: 'preset-2025tj-120',
+    name: '天津市考（2025）',
+    category: 'xingce',
+    description:
+      '改革后120题模型（100分，按天津卷序）：政理10×0.7 / 数量15×0.9 / 言语25×0.9 / 常识15×0.6 / 判断35(图5×0.8·定10×0.8·类10×0.7·逻10×0.9) / 资料20×1.0。',
+    builtIn: true,
+    updatedAt: 1,
+    modules: [
+      { id: 'mod-25tj-politics', name: '政治理论', questionCount: 10, scorePerQuestion: 0.7 },
+      { id: 'mod-25tj-quant', name: '数量关系', questionCount: 15, scorePerQuestion: 0.9 },
+      { id: 'mod-25tj-verbal', name: '言语理解与表达', questionCount: 25, scorePerQuestion: 0.9 },
+      { id: 'mod-25tj-commonsense', name: '常识判断', questionCount: 15, scorePerQuestion: 0.6 },
+      {
+        id: 'mod-25tj-reasoning',
+        name: '判断推理',
+        questionCount: 35,
+        scorePerQuestion: 0,
+        children: [
+          { id: 'sub-25tj-graph', name: '图形推理', questionCount: 5, scorePerQuestion: 0.8 },
+          { id: 'sub-25tj-def', name: '定义判断', questionCount: 10, scorePerQuestion: 0.8 },
+          { id: 'sub-25tj-analogy', name: '类比推理', questionCount: 10, scorePerQuestion: 0.7 },
+          { id: 'sub-25tj-logic', name: '逻辑判断', questionCount: 10, scorePerQuestion: 0.9 },
+        ],
+      },
+      { id: 'mod-25tj-data', name: '资料分析', questionCount: 20, scorePerQuestion: 1 },
+    ],
+  },
+  {
+    id: 'preset-2024tj-120',
+    name: '天津市考（2024）',
+    category: 'xingce',
+    description:
+      '改革前120题模型（100分，按天津卷序）：数量10×1.0 / 言语35×0.9 / 常识20×0.5 / 判断35(图5×0.9·定10×0.8·类10×0.7·逻10×0.9) / 资料20×1.0。',
+    builtIn: true,
+    updatedAt: 1,
+    modules: [
+      { id: 'mod-24tj-quant', name: '数量关系', questionCount: 10, scorePerQuestion: 1 },
+      { id: 'mod-24tj-verbal', name: '言语理解与表达', questionCount: 35, scorePerQuestion: 0.9 },
+      { id: 'mod-24tj-commonsense', name: '常识判断', questionCount: 20, scorePerQuestion: 0.5 },
+      {
+        id: 'mod-24tj-reasoning',
+        name: '判断推理',
+        questionCount: 35,
+        scorePerQuestion: 0,
+        children: [
+          { id: 'sub-24tj-graph', name: '图形推理', questionCount: 5, scorePerQuestion: 0.9 },
+          { id: 'sub-24tj-def', name: '定义判断', questionCount: 10, scorePerQuestion: 0.8 },
+          { id: 'sub-24tj-analogy', name: '类比推理', questionCount: 10, scorePerQuestion: 0.7 },
+          { id: 'sub-24tj-logic', name: '逻辑判断', questionCount: 10, scorePerQuestion: 0.9 },
+        ],
+      },
+      { id: 'mod-24tj-data', name: '资料分析', questionCount: 20, scorePerQuestion: 1 },
+    ],
+  },
+  {
     id: 'preset-sydw-a-100',
     name: '事业单位联考 · A类《职测》',
     description:

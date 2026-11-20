@@ -297,7 +297,8 @@ async function consumeSseStream(
 
 async function invokeGeminiTarget(target, { systemPrompt, userPrompt, stream, onMeta, onDelta }) {
   const action = stream ? 'streamGenerateContent?alt=sse' : 'generateContent';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(target.model)}:${action}`;
+  const baseUrl = (target.baseUrl || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
+  const endpoint = `${baseUrl}/models/${encodeURIComponent(target.model)}:${action}`;
   const contextLabel = `Gemini (${target.model})`;
   const requestOptions = {
     method: 'POST',
@@ -610,26 +611,25 @@ export function listPublicServerSlots(serverEnv) {
 
 function buildTargetPlan({ serverModel = 'auto', byok, serverEnv }) {
   if (byok?.mode === 'gemini-byok') {
-    if (!byok.apiKey) {
-      const err = new Error('请先填写你的 Gemini API Key');
+    if (!byok.apiKey || !byok.model) {
+      const err = new Error('请先填写 Gemini 的 Model 与 API Key');
       err.status = 400;
       throw err;
     }
+    const baseUrl = (byok.baseUrl || 'https://generativelanguage.googleapis.com/v1beta').trim();
     return {
-      stopOnNonRetriable: true,
+      stopOnNonRetriable: false,
       targets: [
-        'gemini-4-hydrogen',
-        'gemini-3.8-flash',
-        'gemini-3.6-flash',
-        'gemini-3.5-flash-lite',
-      ].map((model) => ({
-        kind: 'gemini',
-        provider: 'gemini',
-        model,
-        apiKey: byok.apiKey,
-        timeoutMs: 20000,
-        label: `Gemini (${model})`,
-      })),
+        {
+          kind: 'gemini',
+          provider: 'gemini',
+          baseUrl,
+          model: byok.model.trim(),
+          apiKey: byok.apiKey.trim(),
+          timeoutMs: 25000,
+          label: `Gemini (${byok.model.trim()})`,
+        },
+      ],
     };
   }
 

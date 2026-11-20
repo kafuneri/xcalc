@@ -38,6 +38,7 @@ const emit = defineEmits<{
 
 const selectedId = ref<string>(props.activePresetId);
 const draft = ref<Preset | null>(null);
+const descExpanded = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const editorError = ref('');
 
@@ -441,12 +442,16 @@ function handleFileChange(e: Event) {
           </div>
           <div>
             <label class="field-label">说明备注（选填）</label>
-            <input
+            <textarea
               v-model="draft.description"
               class="input"
-              :disabled="draft.builtIn"
-              type="text"
+              :readonly="draft.builtIn"
+              :rows="descExpanded ? 4 : 1"
+              style="resize: vertical; line-height: 1.5; min-height: 38px; transition: all 0.15s ease"
               placeholder="例如：参考某机构130题估分表"
+              @focus="descExpanded = true"
+              @click="descExpanded = true"
+              @blur="descExpanded = false"
             />
           </div>
         </div>

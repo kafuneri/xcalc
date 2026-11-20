@@ -23,6 +23,7 @@ interface ModuleProfileRule {
   weight: number;
   strengthMin: number;
   weaknessMax: number;
+  targetAccuracy: number;
   strengthTip: string;
   weaknessTip: string;
   volatileTip: string;
@@ -33,6 +34,7 @@ const DEFAULT_PROFILE: ModuleProfileRule = {
   weight: 1.0,
   strengthMin: 80,
   weaknessMax: 68,
+  targetAccuracy: 80,
   strengthTip: '正确率稳定在高位，继续保持现有做题节奏。',
   weaknessTip: '失分偏多，建议梳理该模块高频考点与错题复盘。',
   volatileTip: '不同试卷表现波动较大，建议排查特定子题型或考场限时节奏。',
@@ -46,6 +48,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.35,
       strengthMin: 85,
       weaknessMax: 75,
+      targetAccuracy: 90,
       strengthTip: '资料分析基本盘很稳，注意继续把单篇耗时压缩到 6 分钟以内。',
       weaknessTip: '资料分析提分性价比最高：优先排查找数定位失误、时间/基期陷阱与截位速算精度，目标先冲 85%+。',
       volatileTip: '资料分析分数时高时低，通常因放在卷尾时间不足或复杂计算卡壳，建议调整到前中期作答并学会适当估算。',
@@ -58,6 +61,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.25,
       strengthMin: 80,
       weaknessMax: 70,
+      targetAccuracy: 85,
       strengthTip: '逻辑推理严密，能稳定拿分，可适当提速为其他模块留时间。',
       weaknessTip: '重点复盘加强/削弱论证的“搭桥、他因、因果倒置”以及一拖多分析推理的排除法。',
       volatileTip: '逻辑判断受题干长度与一拖多分析题影响大，遇到复杂匹配题先用列表/代入排除，切忌硬推超时。',
@@ -70,6 +74,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.2,
       strengthMin: 80,
       weaknessMax: 70,
+      targetAccuracy: 85,
       strengthTip: '信息抓取准确，继续保持“只看关键要件、不自行脑补”的做题习惯。',
       weaknessTip: '练习用“主客体、条件、方式、结果”四要件勾画题干，遇到否定问法（不属于/不符合）做好标记。',
       volatileTip: '部分专业学科定义容易读偏，做题时严格对比选项与题干限定词，减少主观臆断。',
@@ -82,6 +87,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.2,
       strengthMin: 80,
       weaknessMax: 65,
+      targetAccuracy: 85,
       strengthTip: '图推敏感度高，能快速识别考点特征，注意立体拼合/截面细节即可。',
       weaknessTip: '建议按“位置→样式→属性→数量→空间”固定口诀试错，单独专项突破对称、笔画与六面体折纸。',
       volatileTip: '图推规律命中靠熟练度：若单题超过 45 秒毫无头绪，果断先蒙一个并标记，避免拖垮整张卷子节奏。',
@@ -94,6 +100,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.15,
       strengthMin: 80,
       weaknessMax: 70,
+      targetAccuracy: 85,
       strengthTip: '词项关系判断敏锐，解题速度快，是高效的稳分点。',
       weaknessTip: '注意二级辨析（词性、褒贬、主动被动、命名方式、材料与功能），国考减题后容错更低，需防粗心。',
       volatileTip: '类比看似简单但陷阱多，尤其近反义与交叉/包容关系易混，造句法验证后再选。',
@@ -106,6 +113,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.25,
       strengthMin: 80,
       weaknessMax: 70,
+      targetAccuracy: 85,
       strengthTip: '判断推理整体扎实，结合子模块细分结果可进一步抠出满分空间。',
       weaknessTip: '判断推理题量大、分值重，建议结合下方图形/定义/类比/逻辑细分数据，集中补最弱的一到两项。',
       volatileTip: '判断模块整体波动明显，建议固定内部作答顺序（如类比→定义→图推→逻辑）以稳住节奏。',
@@ -118,6 +126,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.2,
       strengthMin: 80,
       weaknessMax: 70,
+      targetAccuracy: 85,
       strengthTip: '语感与主旨提炼扎实，继续保持对转折、递进与对策句的敏感度。',
       weaknessTip: '言语分值占比高：逻辑填空多积累高频实词/成语辨析与对应提示词；片段阅读抓行文脉络，警惕“无中生有/偷换概念”。',
       volatileTip: '言语波动多发生在二选一纠结时，建议先看清提问方式再回归原文结构，避免过度联想。',
@@ -130,6 +139,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.15,
       strengthMin: 80,
       weaknessMax: 68,
+      targetAccuracy: 83,
       strengthTip: '语境对应与词义辨析准确，注意保持语感与答题速度。',
       weaknessTip: '优先抓语境提示（转折/并列/解释说明）和固定搭配，集中积累高频近义实词与成语辨析。',
       volatileTip: '二选一纠结耗时偏高时，先凭第一语感排除语义轻重或感情色彩不符选项。',
@@ -142,6 +152,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.2,
       strengthMin: 80,
       weaknessMax: 70,
+      targetAccuracy: 85,
       strengthTip: '主旨把握与行文结构分析清晰，属于稳定得分点。',
       weaknessTip: '先看设问再读文段，重点勾画关联词与尾句对策，严格对比选项中的偷换范围与无中生有。',
       volatileTip: '语句排序/衔接题易因细节漏看失分，先确定首尾句和指代词捆绑再验证。',
@@ -154,6 +165,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 0.85,
       strengthMin: 70,
       weaknessMax: 40,
+      targetAccuracy: 55,
       strengthTip: '数量/数学运算已是显著拉分优势项，能在考场稳拿高分。',
       weaknessTip: '不必追求全做：先死磕工程、经济利润、容斥、牛吃草、最值等 4~5 类送分母题，其余学会挑题或合理蒙猜（保底做对一半以上）。',
       volatileTip: '考场时间分配决定了数量发挥，固定预留 10~12 分钟专挑题干短、套路熟的送分题稳拿分。',
@@ -166,6 +178,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.25,
       strengthMin: 80,
       weaknessMax: 65,
+      targetAccuracy: 85,
       strengthTip: '数量分析得分稳健，能够在限时下兼顾计算速度与精度。',
       weaknessTip: '职测 B 类等试卷中数量分析单题分值高（常达 2+ 分/题）：优先保住资料分析类计算，再挑简单数学方法题拿下。',
       volatileTip: '考场 90 分钟节奏极紧，建议将数量分析安排在常识/言语之后、避免尾盘仓促丢分。',
@@ -178,6 +191,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.25,
       strengthMin: 80,
       weaknessMax: 65,
+      targetAccuracy: 85,
       strengthTip: '综合分析信息整合与多题型迁移能力突出，能稳居高分区。',
       weaknessTip: '综合分析单题分值重，建议拆解薄弱环节（如 C 类中的策略制定、实验设计或资料处理），按小专题集中练透设问套路。',
       volatileTip: '题型切换容易导致思路卡壳，考场建议先做最熟悉的实验/资料题，把耗时偏长的策略运算后置。',
@@ -190,6 +204,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 1.25,
       strengthMin: 80,
       weaknessMax: 65,
+      targetAccuracy: 85,
       strengthTip: '教育/医疗实务情境判断规范，符合岗位核心原则，是重要高分盘。',
       weaknessTip: '策略选择每题 2 分且极具提分性价比：紧扣岗位核心原则（教师关爱学生/家校沟通/循循善诱；医疗以患者安全/合规流程/人文沟通为先），对照真题标准答案校准价值观与处理顺序。',
       volatileTip: '避免仅凭个人日常经验作答，多复盘真题“最优解”排序逻辑，注意轻重缓急与职责边界。',
@@ -202,6 +217,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 0.7,
       strengthMin: 75,
       weaknessMax: 55,
+      targetAccuracy: 75,
       strengthTip: '政治理论素养过硬，能够在新大纲下稳定拿分。',
       weaknessTip: '利用碎片时间系统梳理最新重要会议精神、方针政策及核心表述关键词，侧重理解性对比而非死记硬背。',
       volatileTip: '政治理论受当年时政热点覆盖影响较大，考前一个月集中过一遍权威高频专题梳理。',
@@ -214,6 +230,7 @@ const MODULE_RULES: Array<{ match: RegExp; rule: ModuleProfileRule }> = [
       weight: 0.45,
       strengthMin: 65,
       weaknessMax: 45,
+      targetAccuracy: 60,
       strengthTip: '知识面广，常识模块已超过平均水准。',
       weaknessTip: '常识覆盖面极广、短期投入产出比偏低，不建议花整块时间死背；重点过一遍高频法律（行政法/民法）与科技生活常识即可，考场控制在 6~8 分钟快速过完。',
       volatileTip: '常识本身随机性高，做题时第一直觉作答即可，切忌反复纠结浪费核心模块时间。',
@@ -259,6 +276,13 @@ function computeTrendDelta(values: number[]): number | null {
   if (values.length < 2) return null;
   if (values.length < 4) {
     return values[values.length - 1] - values[0];
+  }
+  if (values.length < 6) {
+    const recentSlice = values.slice(-2);
+    const prevSlice = values.slice(0, -2);
+    const recentAvg = recentSlice.reduce((a, b) => a + b, 0) / recentSlice.length;
+    const prevAvg = prevSlice.reduce((a, b) => a + b, 0) / prevSlice.length;
+    return recentAvg - prevAvg;
   }
   const recentSlice = values.slice(-3);
   const prevSlice = values.slice(-6, -3);
@@ -333,22 +357,41 @@ function buildModuleAnalytics(
   const trendDelta = computeTrendDelta(accuracies);
 
   const rule = findRule(moduleName);
+  const recoverableScore = Math.max(
+    0,
+    Math.round(((rule.targetAccuracy - avgAccuracy) / 100) * avgMaxScore * 100) / 100
+  );
   const priorityScore =
-    Math.round(avgLostScore * rule.weight * 100) / 100;
+    Math.round(recoverableScore * rule.weight * 100) / 100;
+
+  const avgQuestions = sampleCount > 0 ? totalQuestions / sampleCount : 0;
+  const volatileThreshold = avgQuestions <= 5 ? 16 : avgQuestions <= 10 ? 12 : 10;
+  const isVolatile = sampleCount >= 3 && stdDevAccuracy >= volatileThreshold;
 
   let status: ModuleTierStatus = 'normal';
-  let ruleAdvice = rule.normalTip;
+  let baseAdvice = rule.normalTip;
 
-  if (sampleCount >= 3 && stdDevAccuracy >= 10) {
-    status = 'volatile';
-    ruleAdvice = rule.volatileTip;
-  } else if (avgAccuracy >= rule.strengthMin) {
+  if (avgAccuracy >= rule.strengthMin) {
     status = 'strength';
-    ruleAdvice = rule.strengthTip;
+    baseAdvice = rule.strengthTip;
   } else if (avgAccuracy < rule.weaknessMax) {
     status = 'weakness';
-    ruleAdvice = rule.weaknessTip;
+    baseAdvice = rule.weaknessTip;
   }
+
+  let trendPrefix = '';
+  if (sampleCount >= 2) {
+    const latestDiff = latestAccuracy - avgAccuracy;
+    if (latestDiff <= -10) {
+      trendPrefix = `【近期滑坡】最新降至 ${latestAccuracy.toFixed(1)}%（低于均值 ${Math.abs(latestDiff).toFixed(1)}%），建议优先排查耗时或粗心；`;
+    } else if (latestDiff >= 10) {
+      trendPrefix = `【近期回暖】最新已升至 ${latestAccuracy.toFixed(1)}%（高于均值 ${latestDiff.toFixed(1)}%），继续稳住手感；`;
+    }
+  }
+
+  const ruleAdvice = isVolatile
+    ? `${trendPrefix}${baseAdvice}（波动提示：${rule.volatileTip}）`
+    : `${trendPrefix}${baseAdvice}`;
 
   return {
     moduleName,
@@ -367,7 +410,10 @@ function buildModuleAnalytics(
     latestAccuracy,
     trendDelta,
     controllabilityWeight: rule.weight,
+    targetAccuracy: rule.targetAccuracy,
+    recoverableScore,
     priorityScore,
+    isVolatile,
     status,
     ruleAdvice,
   };
@@ -429,9 +475,16 @@ export function analyzeHistoryRecords(records: HistoryRecord[]): AnalysisReport 
           .sort((a, b) => b.avgAccuracy - a.avgAccuracy)
           .slice(0, 2);
 
-  const priorities = [...leafModules]
-    .filter((m) => m.avgLostScore > 0)
+  const recoverablePriorities = [...leafModules]
+    .filter((m) => m.recoverableScore > 0)
     .sort((a, b) => b.priorityScore - a.priorityScore);
+
+  const priorities =
+    recoverablePriorities.length > 0
+      ? recoverablePriorities
+      : [...leafModules]
+          .filter((m) => m.avgLostScore > 0)
+          .sort((a, b) => b.priorityScore - a.priorityScore);
 
   return {
     recordCount: ordered.length,
@@ -504,6 +557,9 @@ export function buildAiSummaryDigest(
       avgLostScore: m.avgLostScore,
       stdDev: Number(m.stdDevAccuracy.toFixed(1)),
       latestAccuracy: Number(m.latestAccuracy.toFixed(1)),
+      targetAccuracy: m.targetAccuracy,
+      recoverableScore: m.recoverableScore,
+      isVolatile: m.isVolatile,
       status: m.status,
       priorityScore: m.priorityScore,
     })),

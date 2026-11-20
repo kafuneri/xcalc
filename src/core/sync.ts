@@ -156,6 +156,8 @@ export async function requestAiAnalysis(params: {
 
   if (params.aiConfig.mode === 'gemini-byok') {
     headers['X-Ai-Key'] = params.aiConfig.geminiKey.trim();
+    headers['X-Ai-Base-Url'] = params.aiConfig.geminiBaseUrl.trim();
+    headers['X-Ai-Model'] = params.aiConfig.geminiModel.trim();
   } else if (params.aiConfig.mode === 'openai-byok') {
     headers['X-Ai-Key'] = params.aiConfig.openaiKey.trim();
     headers['X-Ai-Base-Url'] = params.aiConfig.openaiBaseUrl.trim();
@@ -207,6 +209,8 @@ export async function requestAiAnalysisStream(params: {
 
   if (params.aiConfig.mode === 'gemini-byok') {
     headers['X-Ai-Key'] = params.aiConfig.geminiKey.trim();
+    headers['X-Ai-Base-Url'] = params.aiConfig.geminiBaseUrl.trim();
+    headers['X-Ai-Model'] = params.aiConfig.geminiModel.trim();
   } else if (params.aiConfig.mode === 'openai-byok') {
     headers['X-Ai-Key'] = params.aiConfig.openaiKey.trim();
     headers['X-Ai-Base-Url'] = params.aiConfig.openaiBaseUrl.trim();

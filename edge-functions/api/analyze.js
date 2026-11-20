@@ -117,13 +117,8 @@ export async function onRequestPost(context) {
 
   const serverModel = typeof body?.serverModel === 'string' ? body.serverModel : 'auto';
   const serverEnv = {
-    ZHIPU_API_KEY: resolveEnvVar(context, 'ZHIPU_API_KEY'),
-    ZHIPU_BASE_URL: resolveEnvVar(context, 'ZHIPU_BASE_URL'),
-    CF_ACCOUNT_ID: resolveEnvVar(context, 'CF_ACCOUNT_ID'),
-    CF_API_TOKEN: resolveEnvVar(context, 'CF_API_TOKEN'),
-    AI_GATEWAY_API_KEY: resolveEnvVar(context, 'AI_GATEWAY_API_KEY'),
-    AI_GATEWAY_BASE_URL: resolveEnvVar(context, 'AI_GATEWAY_BASE_URL'),
-    GEMINI_API_KEY: resolveEnvVar(context, 'GEMINI_API_KEY'),
+    ...(typeof process !== 'undefined' && process.env ? process.env : {}),
+    ...(context?.env || {}),
   };
 
   if (body?.stream === true) {

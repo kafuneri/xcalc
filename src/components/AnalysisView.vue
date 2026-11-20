@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import {
   AlertTriangle,
   Award,
+  Download,
   RefreshCw,
   Settings,
   Sparkles,
@@ -32,6 +33,7 @@ import {
 } from '../core/storage';
 import { deriveSyncKey, requestAiAnalysisStream } from '../core/sync';
 import { renderSafeMarkdown } from '../core/markdown';
+import { buildAnalysisMessages } from '../../shared/aiAnalysis.js';
 
 const props = defineProps<{
   examCategory: ExamCategory;
@@ -248,6 +250,33 @@ async function handleRunAiAnalysis() {
     streamingMeta.value = null;
   }
 }
+function handleExportPrompt() {
+  const digest = buildAiSummaryDigest(report.value, props.records, props.examCategory);
+  const { systemPrompt, userPrompt } = buildAnalysisMessages(digest);
+  const label = props.examCategory === 'zhice' ? '职测' : '行测';
+  const md = [
+    `# ${label} AI 复盘提示词与统计摘要`,
+    '',
+    '## System Prompt（系统提示词）',
+    '',
+    '```text',
+    systemPrompt,
+    '```',
+    '',
+    '## User Prompt（用户数据摘要）',
+    '',
+    userPrompt,
+    '',
+  ].join('\n');
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `ai-review-prompt-${props.examCategory}-${dateStr}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 </script>
 
 <template>
@@ -385,13 +414,16 @@ async function handleRunAiAnalysis() {
                     ({{ mod.parentName }})
                   </span>
                 </div>
-                <span class="pill" :class="statusBadge(mod.status).cls">
-                  {{ statusBadge(mod.status).text }} · {{ formatAccuracy(mod.avgAccuracy) }}
-                </span>
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap">
+                  <span v-if="mod.isVolatile" class="pill pill-warning">波动偏大</span>
+                  <span class="pill" :class="statusBadge(mod.status).cls">
+                    {{ statusBadge(mod.status).text }} · {{ formatAccuracy(mod.avgAccuracy) }}
+                  </span>
+                </div>
               </div>
               <div class="diag-meta tabular">
-                场均失分 {{ formatScore(mod.avgLostScore) }} 分（满分
-                {{ formatScore(mod.avgMaxScore) }}）· 最近
+                目标 {{ mod.targetAccuracy }}% · 预计可涨 +{{ mod.recoverableScore.toFixed(1) }} 分 ·
+                场均失分 {{ formatScore(mod.avgLostScore) }} · 最近
                 {{ formatAccuracy(mod.latestAccuracy) }}
               </div>
               <p class="diag-tip">{{ mod.ruleAdvice }}</p>
@@ -405,7 +437,7 @@ async function handleRunAiAnalysis() {
         <div class="card-header">
           <div style="display: flex; align-items: center; gap: 6px; font-weight: 700">
             <TrendingUp :size="16" />
-            <span>全模块量化明细（跨预设按模块名自动合并）</span>
+            <span>全模块量化明细</span>
           </div>
           <button
             class="btn btn-sm"
@@ -446,10 +478,11 @@ async function handleRunAiAnalysis() {
                 </td>
                 <td class="num">{{ formatScore(mod.avgLostScore) }}</td>
                 <td class="num">{{ mod.stdDevAccuracy.toFixed(1) }}%</td>
-                <td>
+                <td style="display: flex; gap: 4px; flex-wrap: wrap">
                   <span class="pill" :class="statusBadge(mod.status).cls">
                     {{ statusBadge(mod.status).text }}
                   </span>
+                  <span v-if="mod.isVolatile" class="pill pill-warning">波动</span>
                 </td>
               </tr>
             </tbody>
@@ -462,9 +495,17 @@ async function handleRunAiAnalysis() {
         <div class="card-header">
           <div style="display: flex; align-items: center; gap: 8px; font-weight: 700">
             <Sparkles :size="16" style="color: var(--primary)" />
-            <span>AI 深度复盘建议（按需触发）</span>
+            <span>AI 深度复盘建议</span>
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <button
+              class="btn btn-sm"
+              type="button"
+              @click="handleExportPrompt"
+            >
+              <Download :size="14" />
+              <span>导出提示词</span>
+            </button>
             <button
               class="btn btn-sm"
               type="button"
@@ -510,16 +551,16 @@ async function handleRunAiAnalysis() {
               <label class="field-label">调用方式</label>
               <select v-model="aiConfig.mode" class="select">
                 <option value="server">
-                  使用站点服务端配置（{{ health.aiReady ? '已就绪' : '未配置密钥' }}）
+                  使用站点内置免费 AI（{{ health.aiReady ? '已就绪' : '暂未开启' }}）
                 </option>
-                <option value="gemini-byok">自定义 Gemini API Key（仅存本地浏览器）</option>
-                <option value="openai-byok">自定义 OpenAI 兼容接口（DeepSeek 等，仅存本地）</option>
+                <option value="gemini-byok">自定义 Gemini API Key（仅本地浏览器保存）</option>
+                <option value="openai-byok">自定义 OpenAI 兼容接口（仅本地浏览器保存）</option>
               </select>
             </div>
 
             <div v-if="aiConfig.mode === 'server'">
               <label class="field-label">
-                内置模型选择（默认自动容灾；指定单个模型时若失败直接报错，不跨源回退）
+                模型选择
               </label>
               <select v-model="aiConfig.serverModel" class="select">
                 <option value="auto">{{ autoChainLabel }}</option>
@@ -529,14 +570,34 @@ async function handleRunAiAnalysis() {
               </select>
             </div>
 
-            <div v-if="aiConfig.mode === 'gemini-byok'">
-              <label class="field-label">Gemini API Key（优先调用 gemini-4-hydrogen，拥堵时自动回退 Flash 备选模型）</label>
-              <input
-                v-model="aiConfig.geminiKey"
-                class="input"
-                type="password"
-                placeholder="输入 AIza... 或 AQ... 开头的 Gemini API Key"
-              />
+            <div v-if="aiConfig.mode === 'gemini-byok'" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px">
+              <div>
+                <label class="field-label">Base URL</label>
+                <input
+                  v-model="aiConfig.geminiBaseUrl"
+                  class="input"
+                  type="text"
+                  placeholder="https://generativelanguage.googleapis.com/v1beta"
+                />
+              </div>
+              <div>
+                <label class="field-label">Model 名称</label>
+                <input
+                  v-model="aiConfig.geminiModel"
+                  class="input"
+                  type="text"
+                  placeholder="gemini-2.5-flash"
+                />
+              </div>
+              <div>
+                <label class="field-label">API Key</label>
+                <input
+                  v-model="aiConfig.geminiKey"
+                  class="input"
+                  type="password"
+                  placeholder="AIza..."
+                />
+              </div>
             </div>
 
             <div v-if="aiConfig.mode === 'openai-byok'" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px">
@@ -582,14 +643,14 @@ async function handleRunAiAnalysis() {
             style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap"
           >
             <span>
-              当前已指定测试内置模型：<code>{{ selectedSlotModel }}</code>（失败时不回退，直接展示真实错误）
+              当前已指定模型：<code>{{ selectedSlotModel }}</code>
             </span>
             <button
               class="btn btn-sm"
               type="button"
               @click="aiConfig.serverModel = 'auto'"
             >
-              恢复自动容灾
+              恢复自动路由
             </button>
           </div>
 
@@ -597,7 +658,7 @@ async function handleRunAiAnalysis() {
             v-if="aiConfig.mode === 'server' && !health.aiReady"
             class="alert-box alert-warning"
           >
-            当前服务端尚未配置 AI 密钥。可点击右上角「模型接口设置」切换为自己的 Gemini / DeepSeek / OpenAI 兼容 Key，或在部署环境中配置 <code>ZHIPU_API_KEY</code>、<code>CF_ACCOUNT_ID</code>/<code>CF_API_TOKEN</code> 或 <code>AI_GATEWAY_API_KEY</code>。
+            当前站点暂未开启内置 AI 服务，可点击右上角「模型设置」填写个人 API Key 继续使用。
           </div>
 
           <div v-if="aiError" class="alert-box alert-danger">

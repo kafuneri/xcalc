@@ -110,7 +110,10 @@ export interface ModuleAnalytics {
   latestAccuracy: number;
   trendDelta: number | null;
   controllabilityWeight: number;
+  targetAccuracy: number;
+  recoverableScore: number;
   priorityScore: number;
+  isVolatile: boolean;
   status: ModuleTierStatus;
   ruleAdvice: string;
 }
@@ -148,6 +151,8 @@ export interface AiAnalysisConfig {
   mode: AiProviderMode;
   serverModel: ServerModelChoice;
   geminiKey: string;
+  geminiBaseUrl: string;
+  geminiModel: string;
   openaiKey: string;
   openaiBaseUrl: string;
   openaiModel: string;

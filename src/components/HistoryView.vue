@@ -8,6 +8,7 @@ import {
   FolderInput,
   Search,
   Trash2,
+  Upload,
 } from '@lucide/vue';
 import type { ExamCategory, HistoryRecord } from '../types';
 import { formatAccuracy, formatScore } from '../core/calc';
@@ -25,7 +26,26 @@ const emit = defineEmits<{
     payload: { id: string; paperName: string; note: string; examDate: string },
   ];
   exportBackup: [];
+  importBackup: [jsonText: string];
 }>();
+
+const fileInputRef = ref<HTMLInputElement | null>(null);
+function triggerImport() {
+  fileInputRef.value?.click();
+}
+function handleFileChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (typeof reader.result === 'string') {
+      emit('importBackup', reader.result);
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
 
 const searchQuery = ref('');
 const expandedIds = reactive<Record<string, boolean>>({});
@@ -117,8 +137,21 @@ function confirmDelete(rec: HistoryRecord) {
 
         <button class="btn btn-sm" type="button" @click="emit('exportBackup')">
           <Download :size="14" />
-          <span>导出 JSON 备份</span>
+          <span>导出备份</span>
         </button>
+
+        <button class="btn btn-sm" type="button" @click="triggerImport">
+          <Upload :size="14" />
+          <span>导入备份</span>
+        </button>
+
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept=".json,application/json"
+          style="display: none"
+          @change="handleFileChange"
+        />
       </div>
     </div>
 

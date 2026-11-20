@@ -2,6 +2,28 @@ import { mergeSyncPayloads, normalizePayload } from '../../shared/syncMerge.js';
 
 const SYNC_KEY_RE = /^[a-f0-9]{64}$/i;
 const MAX_PAYLOAD_BYTES = 950 * 1024; // Stay safely under KV 1MB single-value limit
+const DAILY_NEW_SPACE_LIMIT = 100;
+const MAX_TOTAL_USERS = 2000;
+const USER_COUNT_KV_KEY = 'meta:sync_user_count';
+
+function getClientIpKey(request) {
+  const ip =
+    request.headers.get('eo-connecting-ip') ||
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    'anon';
+  return ip.replace(/[^a-zA-Z0-9._:-]/g, '_');
+}
+
+function getTodayKey() {
+  const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return now.toISOString().slice(0, 10);
+}
+
+async function getTotalUserCount(kv) {
+  const raw = await kv.get(USER_COUNT_KV_KEY);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
 
 function resolveKv(context) {
   try {
@@ -128,6 +150,15 @@ export async function onRequestPut(context) {
   try {
     const existing = await readKvJson(kv, kvKey);
     const merged = mergeSyncPayloads(incoming, existing);
+
+    if (!existing && merged.presets.length === 0 && merged.records.length === 0) {
+      return jsonResponse({
+        ok: true,
+        skippedEmpty: true,
+        payload: merged,
+      });
+    }
+
     const serialized = JSON.stringify(merged);
 
     if (new TextEncoder().encode(serialized).length > MAX_PAYLOAD_BYTES) {
@@ -137,7 +168,44 @@ export async function onRequestPut(context) {
       );
     }
 
+    let ipLimitKey = '';
+    let nextIpCount = 0;
+    let nextTotalUsers = 0;
+
+    if (!existing) {
+      const totalUsers = await getTotalUserCount(kv);
+      if (totalUsers >= MAX_TOTAL_USERS) {
+        return jsonResponse(
+          {
+            error: 'USER_LIMIT_REACHED',
+            message: `云端同步名额已满（上限 ${MAX_TOTAL_USERS} 个空间），暂不支持新建空间，仍可使用本地功能与导出备份。`,
+          },
+          403
+        );
+      }
+      nextTotalUsers = totalUsers + 1;
+
+      ipLimitKey = `rl:sync-new:${getClientIpKey(context.request)}:${getTodayKey()}`;
+      const ipCount = Number(await kv.get(ipLimitKey)) || 0;
+      if (ipCount >= DAILY_NEW_SPACE_LIMIT) {
+        return jsonResponse(
+          {
+            error: 'TOO_MANY_NEW_SPACES',
+            message: `今日当前网络新建同步空间已达上限（${DAILY_NEW_SPACE_LIMIT} 次/天），请明日再试。`,
+          },
+          429
+        );
+      }
+      nextIpCount = ipCount + 1;
+    }
+
     await kv.put(kvKey, serialized);
+    if (!existing) {
+      await kv.put(USER_COUNT_KV_KEY, String(nextTotalUsers));
+      await kv.put(ipLimitKey, String(nextIpCount), { expirationTtl: 86400 * 2 }).catch(() =>
+        kv.put(ipLimitKey, String(nextIpCount))
+      );
+    }
     return jsonResponse({
       ok: true,
       payload: merged,
@@ -193,6 +261,18 @@ export async function onRequestPost(context) {
   }
 
   try {
+    const ipLimitKey = `rl:sync-new:${getClientIpKey(context.request)}:${getTodayKey()}`;
+    const ipCount = Number(await kv.get(ipLimitKey)) || 0;
+    if (ipCount >= DAILY_NEW_SPACE_LIMIT) {
+      return jsonResponse(
+        {
+          error: 'TOO_MANY_NEW_SPACES',
+          message: `今日当前网络新建或迁移空间已达上限（${DAILY_NEW_SPACE_LIMIT} 次/天），请明日再试。`,
+        },
+        429
+      );
+    }
+
     const oldData = await readKvJson(kv, oldKvKey);
     if (!oldData) {
       return jsonResponse(
@@ -222,6 +302,9 @@ export async function onRequestPost(context) {
     } else {
       await kv.put(oldKvKey, '');
     }
+    await kv.put(ipLimitKey, String(ipCount + 1), { expirationTtl: 86400 * 2 }).catch(() =>
+      kv.put(ipLimitKey, String(ipCount + 1))
+    );
 
     return jsonResponse({ ok: true, migrated: true });
   } catch (err) {

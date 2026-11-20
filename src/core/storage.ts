@@ -202,6 +202,8 @@ export function loadAiConfig(): AiAnalysisConfig {
         mode: 'server',
         serverModel: 'auto',
         geminiKey: '',
+        geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        geminiModel: 'gemini-2.5-flash',
         openaiKey: '',
         openaiBaseUrl: 'https://api.deepseek.com/v1',
         openaiModel: 'deepseek-chat',
@@ -219,6 +221,10 @@ export function loadAiConfig(): AiAnalysisConfig {
           ? (rawServerModel as AiAnalysisConfig['serverModel'])
         : 'auto',
       geminiKey: String(parsed.geminiKey || ''),
+      geminiBaseUrl: String(
+        parsed.geminiBaseUrl || 'https://generativelanguage.googleapis.com/v1beta'
+      ),
+      geminiModel: String(parsed.geminiModel || 'gemini-2.5-flash'),
       openaiKey: String(parsed.openaiKey || ''),
       openaiBaseUrl: String(parsed.openaiBaseUrl || 'https://api.deepseek.com/v1'),
       openaiModel: String(parsed.openaiModel || 'deepseek-chat'),
@@ -228,6 +234,8 @@ export function loadAiConfig(): AiAnalysisConfig {
       mode: 'server',
       serverModel: 'auto',
       geminiKey: '',
+      geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      geminiModel: 'gemini-2.5-flash',
       openaiKey: '',
       openaiBaseUrl: 'https://api.deepseek.com/v1',
       openaiModel: 'deepseek-chat',

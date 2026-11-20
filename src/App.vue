@@ -622,6 +622,7 @@ onMounted(async () => {
         @delete-record="handleDeleteRecord"
         @update-meta="handleUpdateRecordMeta"
         @export-backup="handleExportBackup"
+        @import-backup="handleImportBackup"
       />
 
       <AnalysisView

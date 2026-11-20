@@ -43,8 +43,12 @@ watch(
   }
 );
 
+function isValidPassphrase(val: string): boolean {
+  return val.length >= 8 && /[A-Za-z]/.test(val) && /\d/.test(val);
+}
+
 const canConnect = computed(() => {
-  return spaceName.value.trim().length >= 2 && passphrase.value.length >= 6;
+  return spaceName.value.trim().length >= 2 && isValidPassphrase(passphrase.value);
 });
 
 const envBadge = computed(() => {
@@ -56,7 +60,7 @@ const envBadge = computed(() => {
   }
   if (props.health.platform === 'edgeone' && props.health.kvReady) {
     return {
-      text: '当前运行：腾讯云 EdgeOne KV 已就绪 (XC_KV)',
+      text: '腾讯云同步服务已就绪',
       cls: 'alert-success',
     };
   }
@@ -84,8 +88,8 @@ function handleConnect() {
     localError.value = '空间名称 / 昵称至少需要 2 个字符';
     return;
   }
-  if (passphrase.value.length < 6) {
-    localError.value = '为了防止他人撞库访问你的数据，同步口令至少需要 6 位';
+  if (!isValidPassphrase(passphrase.value)) {
+    localError.value = '为了防止他人撞库访问你的数据，同步口令至少需要 8 位，且必须同时包含数字和字母';
     return;
   }
   emit('connect', name, passphrase.value);
@@ -97,8 +101,8 @@ function handleRekey() {
     localError.value = '原同步口令至少需要 6 位';
     return;
   }
-  if (newPassInput.value.length < 6) {
-    localError.value = '新同步口令至少需要 6 位';
+  if (!isValidPassphrase(newPassInput.value)) {
+    localError.value = '新同步口令至少需要 8 位，且必须同时包含数字和字母';
     return;
   }
   if (newPassInput.value !== confirmNewPass.value) {
@@ -119,7 +123,7 @@ function handleRekey() {
       <div class="card-header">
         <div style="display: flex; align-items: center; gap: 8px; font-weight: 700">
           <Cloud :size="18" />
-          <span>多用户云端同步（EdgeOne KV）</span>
+          <span>多端云同步</span>
         </div>
         <button class="btn btn-sm btn-icon" @click="emit('close')" aria-label="关闭">
           <X :size="16" />
@@ -136,7 +140,7 @@ function handleRekey() {
         </div>
 
         <div class="alert-box alert-info">
-          <strong>使用说明：</strong>不同用户可各自输入专属的「空间名称 + 同步口令」。前端会在本地计算 SHA-256 哈希后作为云端存储键，不同用户的预设和历史试卷彼此完全隔离，换设备输入相同信息即可恢复。
+          <strong>使用说明：</strong>输入自定义的「空间名称 + 同步口令」即可开启云同步。不同空间的数据相互独立，在另一台设备输入相同名称与口令即可恢复全部记录与预设。
         </div>
 
         <div>
@@ -151,7 +155,7 @@ function handleRekey() {
         </div>
 
         <div>
-          <label class="field-label">同步口令（至少 6 位，服务端不存明文）</label>
+          <label class="field-label">同步口令（至少 8 位且含数字和字母，加密传输且不存明文）</label>
           <div style="display: flex; gap: 8px">
             <input
               v-model="passphrase"
@@ -247,7 +251,7 @@ function handleRekey() {
           "
         >
           <div style="font-size: 13px; font-weight: 600">
-            修改当前空间「{{ profile.spaceName }}」同步口令（自动迁移云端数据并失效旧口令）
+            修改当前空间「{{ profile.spaceName }}」同步口令（原口令将立即失效）
           </div>
           <div>
             <label class="field-label">原同步口令</label>
@@ -259,7 +263,7 @@ function handleRekey() {
             />
           </div>
           <div>
-            <label class="field-label">新同步口令（至少 6 位）</label>
+            <label class="field-label">新同步口令（至少 8 位，且含数字和字母）</label>
             <input
               v-model="newPassInput"
               class="input"
