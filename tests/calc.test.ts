@@ -23,7 +23,7 @@ import {
 } from '../src/core/analytics';
 import { renderSafeMarkdown } from '../src/core/markdown';
 import { mergeSyncPayloads } from '../shared/syncMerge.js';
-import { runAiAnalysis } from '../shared/aiAnalysis.js';
+import { runAiAnalysis, runAiAnalysisStream } from '../shared/aiAnalysis.js';
 
 describe('built-in presets sanity check', () => {
   it('sums exactly to 100 points for xingce and 150 points for zhice across all 10 built-in presets', () => {
@@ -173,14 +173,24 @@ describe('preset paper name builder', () => {
     expect(
       buildPresetPaperName({
         year: '',
-        region: '河北省考',
+        region: '河北',
         level: '',
         paperType: '行测模拟题',
         index: '',
       })
     ).toBe('河北省考行测模拟题');
 
-    expect(PAPER_REGIONS_PINNED).toEqual(['国考', '河北省考', '天津市考', '北京市考']);
+    expect(
+      buildPresetPaperName({
+        year: '2026',
+        region: '北京',
+        level: '',
+        paperType: '行测真题',
+        index: '',
+      })
+    ).toBe('2026年北京市考行测真题');
+
+    expect(PAPER_REGIONS_PINNED).toEqual(['国考', '河北', '天津', '北京']);
     expect(PAPER_REGIONS_ALPHA).toContain('黑龙江');
     expect(PAPER_REGIONS_ALPHA).toContain('浙江');
   });
@@ -410,7 +420,7 @@ describe('renderSafeMarkdown', () => {
 });
 
 describe('runAiAnalysis priority chain', () => {
-  it('falls back Zhipu (429) -> Cloudflare Gemma-4 (network err) -> Makers Google Gemini chain', async () => {
+  it('falls back Cloudflare Gemma-4 (network err) -> Makers Gemini 3.5 Lite (502) -> Zhipu', async () => {
     const calls: Array<{ url: string; model: string; body: Record<string, unknown> }> = [];
     const origFetch = globalThis.fetch;
 
@@ -418,22 +428,17 @@ describe('runAiAnalysis priority chain', () => {
       const parsed = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
       calls.push({ url: String(url), model: String(parsed.model || ''), body: parsed });
 
-      if (String(url).includes('open.bigmodel.cn')) {
-        return new Response(JSON.stringify({ error: { code: '1305', message: 'rate limit' } }), {
-          status: 429,
-        });
-      }
       if (String(url).includes('api.cloudflare.com')) {
         throw new Error('network unreachable');
       }
       if (String(url).includes('ai-gateway.edgeone.link')) {
-        if (parsed.model === 'google/gemini-3.5-flash-lite') {
-          return new Response(
-            JSON.stringify({ choices: [{ message: { content: 'ok from gemini' } }] }),
-            { status: 200 }
-          );
-        }
         return new Response(JSON.stringify({ error: { message: 'busy' } }), { status: 502 });
+      }
+      if (String(url).includes('open.bigmodel.cn')) {
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: 'ok from zhipu' } }] }),
+          { status: 200 }
+        );
       }
       return new Response('{}', { status: 500 });
     }) as typeof fetch;
@@ -450,18 +455,15 @@ describe('runAiAnalysis priority chain', () => {
         },
       });
 
-      expect(res.provider).toBe('edgeone-makers-google');
-      expect(res.model).toBe('google/gemini-3.5-flash-lite');
-      expect(res.content).toBe('ok from gemini');
-      expect(calls[0].body.thinking).toEqual({ type: 'disabled' });
-      expect(calls[1].body.chat_template_kwargs).toEqual({ enable_thinking: false });
+      expect(res.provider).toBe('zhipu');
+      expect(res.model).toBe('glm-4.7-flash');
+      expect(res.content).toBe('ok from zhipu');
+      expect(calls[0].body.chat_template_kwargs).toEqual({ enable_thinking: false });
+      expect(calls[2].body.thinking).toEqual({ type: 'disabled' });
       expect(calls.map((c) => c.model)).toEqual([
-        'glm-4.7-flash',
         '@cf/google/gemma-4-26b-a4b-it',
-        'google/gemini-4-hydrogen',
-        'google/gemini-3.8-flash',
-        'google/gemini-3.6-flash',
         'google/gemini-3.5-flash-lite',
+        'glm-4.7-flash',
       ]);
       expect(calls.some((c) => c.model.startsWith('@makers/'))).toBe(false);
     } finally {
@@ -496,6 +498,97 @@ describe('runAiAnalysis priority chain', () => {
         })
       ).rejects.toThrow(/HTTP 429, code=1305.*该模型当前访问量过大/);
       expect(callCount).toBe(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('works cleanly when AbortSignal.timeout is unavailable (EdgeOne runtime compatibility)', async () => {
+    const origFetch = globalThis.fetch;
+    const origTimeoutFn = AbortSignal.timeout;
+
+    Object.defineProperty(AbortSignal, 'timeout', {
+      value: undefined,
+      configurable: true,
+    });
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit & { eo?: { timeoutSetting?: { readTimeout?: number } } }) => {
+      expect(init?.eo?.timeoutSetting?.readTimeout).toBe(25000);
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'ok without AbortSignal.timeout' } }] }),
+        { status: 200 }
+      );
+    }) as typeof fetch;
+
+    try {
+      const res = await runAiAnalysis({
+        digest: { examType: 'xingce', summary: {}, modules: [], recentPapers: [] },
+        serverModel: 'zhipu:glm-4.7-flash',
+        byok: { mode: 'server' },
+        serverEnv: { ZHIPU_API_KEY: 'z-key' },
+      });
+      expect(res.provider).toBe('zhipu');
+      expect(res.content).toBe('ok without AbortSignal.timeout');
+    } finally {
+      globalThis.fetch = origFetch;
+      Object.defineProperty(AbortSignal, 'timeout', {
+        value: origTimeoutFn,
+        configurable: true,
+      });
+    }
+  });
+
+  it('streams SSE deltas cleanly across split chunks and falls back before first token', async () => {
+    const origFetch = globalThis.fetch;
+    const statuses: string[] = [];
+    const deltas: string[] = [];
+    let metaSeen: { provider: string; model: string } | null = null;
+
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes('api.cloudflare.com')) {
+        return new Response(JSON.stringify({ errors: [{ code: 7000, message: 'busy' }] }), {
+          status: 503,
+        });
+      }
+      const enc = new TextEncoder();
+      const body = new ReadableStream({
+        start(ctrl) {
+          // Intentionally split a data: JSON line across two TCP chunks
+          ctrl.enqueue(enc.encode('data: {"choices":[{"delta":{"content":"### 复盘"}}]}\n\n'));
+          ctrl.enqueue(enc.encode('data: {"choices":[{"delta":{"con'));
+          ctrl.enqueue(enc.encode('tent":"报告"}}]}\n\ndata: [DONE]\n\n'));
+          ctrl.close();
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const res = await runAiAnalysisStream({
+        digest: { examType: 'xingce', summary: {}, modules: [], recentPapers: [] },
+        byok: { mode: 'server' },
+        serverEnv: {
+          ZHIPU_API_KEY: 'z-key',
+          CF_ACCOUNT_ID: 'cf-acc',
+          CF_API_TOKEN: 'cf-tok',
+          AI_GATEWAY_API_KEY: 'gw-key',
+        },
+        onStatus: (msg) => statuses.push(msg),
+        onMeta: (m) => {
+          metaSeen = m;
+        },
+        onDelta: (d) => deltas.push(d),
+      });
+
+      expect(statuses.length).toBe(2);
+      expect(metaSeen).toEqual({
+        provider: 'edgeone-makers-google',
+        model: 'google/gemini-3.5-flash-lite',
+      });
+      expect(deltas).toEqual(['### 复盘', '报告']);
+      expect(res.content).toBe('### 复盘报告');
     } finally {
       globalThis.fetch = origFetch;
     }

@@ -129,6 +129,7 @@ export async function checkCloudHealth(): Promise<HealthStatus> {
       kvReady: Boolean(data.kvReady),
       kvBindingName: data.kvBindingName,
       aiReady: Boolean(data.aiReady),
+      aiSlots: Array.isArray(data.aiSlots) ? data.aiSlots : [],
     };
   } catch {
     return { ok: false, platform: 'static-only', kvReady: false, aiReady: false };
@@ -182,6 +183,146 @@ export async function requestAiAnalysis(params: {
   };
 }
 
+export async function requestAiAnalysisStream(params: {
+  digest: Record<string, unknown>;
+  aiConfig: AiAnalysisConfig;
+  syncKey?: string;
+  signal?: AbortSignal;
+  onStatus?: (message: string) => void;
+  onMeta?: (meta: { provider: string; model: string }) => void;
+  onDelta?: (delta: string) => void;
+}): Promise<{
+  provider: string;
+  model: string;
+  content: string;
+}> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Ai-Mode': params.aiConfig.mode,
+  };
+
+  if (params.syncKey) {
+    headers['X-Sync-Key'] = params.syncKey;
+  }
+
+  if (params.aiConfig.mode === 'gemini-byok') {
+    headers['X-Ai-Key'] = params.aiConfig.geminiKey.trim();
+  } else if (params.aiConfig.mode === 'openai-byok') {
+    headers['X-Ai-Key'] = params.aiConfig.openaiKey.trim();
+    headers['X-Ai-Base-Url'] = params.aiConfig.openaiBaseUrl.trim();
+    headers['X-Ai-Model'] = params.aiConfig.openaiModel.trim();
+  }
+
+  const res = await fetch('/api/analyze', {
+    method: 'POST',
+    headers,
+    signal: params.signal,
+    body: JSON.stringify({
+      digest: params.digest,
+      serverModel: params.aiConfig.serverModel || 'auto',
+      stream: true,
+    }),
+  });
+
+  const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+  if (!res.ok || !contentType.includes('text/event-stream') || !res.body) {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `AI 分析请求失败 (${res.status})`);
+    }
+    if (typeof data.content === 'string' && data.content) {
+      params.onMeta?.({
+        provider: String(data.provider || ''),
+        model: String(data.model || ''),
+      });
+      params.onDelta?.(data.content);
+      return {
+        provider: String(data.provider || ''),
+        model: String(data.model || ''),
+        content: data.content,
+      };
+    }
+    throw new Error('服务端未返回流式数据');
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let lineBuffer = '';
+  let finalMeta = { provider: '', model: '' };
+  let accumulated = '';
+  let finishedResult: { provider: string; model: string; content: string } | null = null;
+
+  const handleLine = (rawLine: string) => {
+    const line = rawLine.replace(/\r$/, '');
+    if (!line.startsWith('data:')) return;
+    const jsonText = line.slice(5).trim();
+    if (!jsonText) return;
+
+    let evt: Record<string, unknown>;
+    try {
+      evt = JSON.parse(jsonText) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+
+    if (evt.type === 'status' && typeof evt.message === 'string') {
+      params.onStatus?.(evt.message);
+    } else if (evt.type === 'meta') {
+      finalMeta = {
+        provider: String(evt.provider || ''),
+        model: String(evt.model || ''),
+      };
+      params.onMeta?.(finalMeta);
+    } else if (evt.type === 'delta' && typeof evt.text === 'string') {
+      accumulated += evt.text;
+      params.onDelta?.(evt.text);
+    } else if (evt.type === 'error') {
+      throw new Error(String(evt.message || 'AI 分析请求失败'));
+    } else if (evt.type === 'done') {
+      finishedResult = {
+        provider: String(evt.provider || finalMeta.provider || ''),
+        model: String(evt.model || finalMeta.model || ''),
+        content: String(evt.content || accumulated),
+      };
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      lineBuffer += decoder.decode(value, { stream: true });
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() ?? '';
+      for (const line of lines) {
+        handleLine(line);
+      }
+    }
+    lineBuffer += decoder.decode();
+    if (lineBuffer.trim()) {
+      handleLine(lineBuffer);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // ignore
+    }
+  }
+
+  if (finishedResult) {
+    return finishedResult;
+  }
+  if (accumulated.trim()) {
+    return {
+      provider: finalMeta.provider,
+      model: finalMeta.model,
+      content: accumulated.trim(),
+    };
+  }
+  throw new Error('AI 流式连接意外中断，未收到有效内容');
+}
+
 export async function pullCloudData(syncKey: string): Promise<{
   exists: boolean;
   payload: SyncPayload;
@@ -224,4 +365,26 @@ export async function pushCloudData(
   }
 
   return normalizePayload(data.payload);
+}
+
+export async function changeSyncPassphrase(params: {
+  spaceName: string;
+  oldPassphrase: string;
+  newPassphrase: string;
+}): Promise<void> {
+  const oldSyncKey = await deriveSyncKey(params.spaceName, params.oldPassphrase);
+  const newSyncKey = await deriveSyncKey(params.spaceName, params.newPassphrase);
+  const res = await fetch('/api/sync', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Sync-Key': oldSyncKey,
+    },
+    body: JSON.stringify({ newSyncKey }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || `修改同步口令失败 (${res.status})`);
+  }
 }

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import {
   AlertTriangle,
   Award,
   RefreshCw,
   Settings,
   Sparkles,
+  Square,
   TrendingUp,
 } from '@lucide/vue';
 import type {
@@ -29,7 +30,7 @@ import {
   saveAiConfig,
   saveAiResultCache,
 } from '../core/storage';
-import { deriveSyncKey, requestAiAnalysis } from '../core/sync';
+import { deriveSyncKey, requestAiAnalysisStream } from '../core/sync';
 import { renderSafeMarkdown } from '../core/markdown';
 
 const props = defineProps<{
@@ -45,11 +46,25 @@ const fingerprint = computed(() =>
 );
 
 const showSubModules = ref(true);
+const aiSlots = computed(() => props.health.aiSlots || []);
+const autoChainLabel = computed(() => '自动路由');
+const selectedSlotModel = computed(() => {
+  const cur = aiConfig.value.serverModel;
+  return aiSlots.value.find((s) => s.value === cur)?.model || cur;
+});
 const showAiSettings = ref(false);
 const aiConfig = ref<AiAnalysisConfig>(loadAiConfig());
 const aiCache = ref<AiAnalysisResult | null>(loadAiResultCache());
 const aiLoading = ref(false);
 const aiError = ref('');
+const streamingStatus = ref('');
+const streamingContent = ref('');
+const streamingMeta = ref<{ provider: string; model: string } | null>(null);
+let activeAbortController: AbortController | null = null;
+
+onBeforeUnmount(() => {
+  activeAbortController?.abort();
+});
 
 watch(
   aiConfig,
@@ -88,12 +103,24 @@ const matchingCachedResult = computed(() => {
 });
 
 const activeAiDisplay = computed(() => {
-  if (matchingCachedResult.value) return matchingCachedResult.value;
+  if (aiLoading.value && streamingContent.value) {
+    return {
+      fingerprint: fingerprint.value,
+      provider: streamingMeta.value?.provider || 'streaming',
+      model: streamingMeta.value?.model || '生成中',
+      content: streamingContent.value,
+      createdAt: Date.now(),
+      isStreaming: true,
+    };
+  }
+  if (matchingCachedResult.value) {
+    return { ...matchingCachedResult.value, isStreaming: false };
+  }
   if (
     aiCache.value &&
     aiCache.value.fingerprint.startsWith(`${props.examCategory}::`)
   ) {
-    return aiCache.value;
+    return { ...aiCache.value, isStreaming: false };
   }
   return null;
 });
@@ -127,10 +154,25 @@ function formatDelta(delta: number | null, suffix = ''): string {
   return `${rounded}${suffix}`;
 }
 
+function handleStopAiAnalysis() {
+  activeAbortController?.abort();
+}
+
 async function handleRunAiAnalysis() {
   if (report.value.recordCount === 0) return;
+  activeAbortController?.abort();
+  const controller = new AbortController();
+  activeAbortController = controller;
+
   aiLoading.value = true;
   aiError.value = '';
+  streamingStatus.value = '正在整理统计摘要并连接 AI...';
+  streamingContent.value = '';
+  streamingMeta.value = null;
+  let latestMeta: { provider: string; model: string } = {
+    provider: '',
+    model: '',
+  };
 
   try {
     let syncKey: string | undefined;
@@ -150,10 +192,24 @@ async function handleRunAiAnalysis() {
       props.records,
       props.examCategory
     );
-    const res = await requestAiAnalysis({
+    const res = await requestAiAnalysisStream({
       digest,
       aiConfig: aiConfig.value,
       syncKey,
+      signal: controller.signal,
+      onStatus: (msg) => {
+        if (!streamingContent.value) {
+          streamingStatus.value = msg;
+        }
+      },
+      onMeta: (meta) => {
+        latestMeta = meta;
+        streamingMeta.value = meta;
+        streamingStatus.value = '';
+      },
+      onDelta: (delta) => {
+        streamingContent.value += delta;
+      },
     });
 
     const saved: AiAnalysisResult = {
@@ -166,9 +222,30 @@ async function handleRunAiAnalysis() {
     aiCache.value = saved;
     saveAiResultCache(saved);
   } catch (err) {
-    aiError.value = err instanceof Error ? err.message : 'AI 分析请求失败';
+    const isAborted = err instanceof DOMException && err.name === 'AbortError';
+    if (isAborted) {
+      if (streamingContent.value.trim()) {
+        const partial: AiAnalysisResult = {
+          fingerprint: fingerprint.value,
+          provider: latestMeta.provider || 'interrupted',
+          model: latestMeta.model || '已手动停止',
+          content: streamingContent.value.trim(),
+          createdAt: Date.now(),
+        };
+        aiCache.value = partial;
+        saveAiResultCache(partial);
+      }
+    } else {
+      aiError.value = err instanceof Error ? err.message : 'AI 分析请求失败';
+    }
   } finally {
+    if (activeAbortController === controller) {
+      activeAbortController = null;
+    }
     aiLoading.value = false;
+    streamingStatus.value = '';
+    streamingContent.value = '';
+    streamingMeta.value = null;
   }
 }
 </script>
@@ -397,6 +474,15 @@ async function handleRunAiAnalysis() {
               <span>模型接口设置</span>
             </button>
             <button
+              v-if="aiLoading"
+              class="btn btn-sm"
+              type="button"
+              @click="handleStopAiAnalysis"
+            >
+              <Square :size="13" />
+              <span>停止生成</span>
+            </button>
+            <button
               class="btn btn-sm btn-primary"
               type="button"
               :disabled="aiLoading || !canCallServerAi"
@@ -406,7 +492,9 @@ async function handleRunAiAnalysis() {
               <span>
                 {{
                   aiLoading
-                    ? '生成复盘中...'
+                    ? streamingContent
+                      ? '流式输出中...'
+                      : '连接模型中...'
                     : matchingCachedResult
                       ? '重新生成 AI 复盘'
                       : '生成 AI 深度复盘'
@@ -434,29 +522,9 @@ async function handleRunAiAnalysis() {
                 内置模型选择（默认自动容灾；指定单个模型时若失败直接报错，不跨源回退）
               </label>
               <select v-model="aiConfig.serverModel" class="select">
-                <option value="auto">
-                  自动容灾（智谱 glm-4.7-flash → Cloudflare Gemma-4 → Makers Gemini）
-                </option>
-                <option value="zhipu:glm-4.7-flash">
-                  1. 智谱 · glm-4.7-flash（直连 · 关思考）
-                </option>
-                <option value="cf:@cf/google/gemma-4-26b-a4b-it">
-                  2. Cloudflare · @cf/google/gemma-4-26b-a4b-it（关思考）
-                </option>
-                <option value="makers:auto">
-                  3. EdgeOne Makers · Gemini 全链自动回退（仅 google/*）
-                </option>
-                <option value="makers:google/gemini-4-hydrogen">
-                  3a. EdgeOne Makers · google/gemini-4-hydrogen
-                </option>
-                <option value="makers:google/gemini-3.8-flash">
-                  3b. EdgeOne Makers · google/gemini-3.8-flash
-                </option>
-                <option value="makers:google/gemini-3.6-flash">
-                  3c. EdgeOne Makers · google/gemini-3.6-flash
-                </option>
-                <option value="makers:google/gemini-3.5-flash-lite">
-                  3d. EdgeOne Makers · google/gemini-3.5-flash-lite
+                <option value="auto">{{ autoChainLabel }}</option>
+                <option v-for="slot in aiSlots" :key="slot.value" :value="slot.value">
+                  {{ slot.label }}
                 </option>
               </select>
             </div>
@@ -514,7 +582,7 @@ async function handleRunAiAnalysis() {
             style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap"
           >
             <span>
-              当前已指定测试内置模型：<code>{{ aiConfig.serverModel }}</code>（失败时不回退，直接展示真实错误）
+              当前已指定测试内置模型：<code>{{ selectedSlotModel }}</code>（失败时不回退，直接展示真实错误）
             </span>
             <button
               class="btn btn-sm"
@@ -536,13 +604,28 @@ async function handleRunAiAnalysis() {
             {{ aiError }}
           </div>
 
+          <div
+            v-if="aiLoading && streamingStatus && !streamingContent"
+            class="alert-box alert-info"
+            style="display: flex; align-items: center; gap: 8px"
+          >
+            <RefreshCw :size="14" class="spin" />
+            <span>{{ streamingStatus }}</span>
+          </div>
+
           <div v-if="activeAiDisplay" class="ai-result-box">
             <div class="ai-result-meta tabular">
               <span>
-                来源：<strong>{{ activeAiDisplay.provider }}</strong> ·
-                <code>{{ activeAiDisplay.model }}</code>
+                来源：<code>{{ activeAiDisplay.model }}</code>
                 <span
-                  v-if="!matchingCachedResult"
+                  v-if="activeAiDisplay.isStreaming"
+                  class="pill pill-primary"
+                  style="margin-left: 6px"
+                >
+                  流式输出中
+                </span>
+                <span
+                  v-else-if="!matchingCachedResult"
                   class="pill pill-warning"
                   style="margin-left: 6px"
                 >
@@ -554,6 +637,10 @@ async function handleRunAiAnalysis() {
               </span>
             </div>
             <div class="ai-result-content ai-markdown" v-html="renderedAiHtml" />
+            <div v-if="activeAiDisplay.isStreaming" class="ai-typing-line">
+              <span class="ai-cursor" aria-hidden="true" />
+              <span>正在实时输出…</span>
+            </div>
           </div>
 
           <p

@@ -3,6 +3,8 @@
  * Tells the frontend whether cloud KV (XC_KV) and server AI keys are ready.
  */
 
+import { listPublicServerSlots } from '../../shared/aiAnalysis.js';
+
 function resolveKv(context) {
   try {
     if (typeof XC_KV !== 'undefined' && XC_KV) return XC_KV;
@@ -40,19 +42,19 @@ function jsonResponse(data, status = 200) {
 
 export async function onRequestGet(context) {
   const kv = resolveKv(context);
-  const hasZhipu = Boolean(resolveEnvVar(context, 'ZHIPU_API_KEY'));
-  const hasCf = Boolean(
-    resolveEnvVar(context, 'CF_ACCOUNT_ID') && resolveEnvVar(context, 'CF_API_TOKEN')
-  );
-  const hasGateway = Boolean(resolveEnvVar(context, 'AI_GATEWAY_API_KEY'));
-  const hasGemini = Boolean(resolveEnvVar(context, 'GEMINI_API_KEY'));
+  const mergedEnv = {
+    ...(typeof process !== 'undefined' && process.env ? process.env : {}),
+    ...(context?.env || {}),
+  };
+  const aiSlots = listPublicServerSlots(mergedEnv);
 
   return jsonResponse({
     ok: true,
     platform: 'edgeone',
     kvReady: Boolean(kv && typeof kv.get === 'function' && typeof kv.put === 'function'),
     kvBindingName: 'XC_KV',
-    aiReady: hasZhipu || hasCf || hasGateway || hasGemini,
+    aiReady: aiSlots.length > 0,
+    aiSlots,
     timestamp: Date.now(),
   });
 }

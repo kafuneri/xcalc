@@ -74,12 +74,21 @@ export interface SyncProfile {
   lastSyncedAt?: number;
 }
 
+export interface PublicServerSlot {
+  value: string;
+  index: number;
+  model: string;
+  label: string;
+  firstTokenMs: number;
+}
+
 export interface HealthStatus {
   ok: boolean;
   platform: 'edgeone' | 'local-mock' | 'static-only';
   kvReady: boolean;
   kvBindingName?: string;
   aiReady?: boolean;
+  aiSlots?: PublicServerSlot[];
 }
 
 export type ModuleTierStatus = 'strength' | 'weakness' | 'volatile' | 'normal';
@@ -123,6 +132,10 @@ export type AiProviderMode = 'server' | 'gemini-byok' | 'openai-byok';
 
 export type ServerModelChoice =
   | 'auto'
+  | `slot:${number}`
+  | 'nvidia:nemotron-3.5-super-vl-120b-a12b'
+  | 'nvidia:minimaxai/minimax-m3.1-flash'
+  | 'nvidia:nvidia/nemotron-3-ultra-550b-a55b'
   | 'zhipu:glm-4.7-flash'
   | 'cf:@cf/google/gemma-4-26b-a4b-it'
   | 'makers:auto'

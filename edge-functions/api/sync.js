@@ -43,7 +43,7 @@ export async function onRequestOptions() {
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key',
     },
   });
@@ -145,6 +145,88 @@ export async function onRequestPut(context) {
   } catch (err) {
     return jsonResponse(
       { error: 'KV_WRITE_FAILED', message: err?.message || '写入云端 KV 失败' },
+      500
+    );
+  }
+}
+
+export async function onRequestPost(context) {
+  const kv = resolveKv(context);
+  if (!kv) {
+    return jsonResponse(
+      {
+        error: 'KV_NOT_BOUND',
+        message: 'EdgeOne KV 命名空间 (XC_KV) 尚未绑定，请先在控制台绑定 KV 并命名为 XC_KV。',
+      },
+      503
+    );
+  }
+
+  const oldKvKey = parseSyncKey(context.request);
+  if (!oldKvKey) {
+    return jsonResponse(
+      { error: 'INVALID_SYNC_KEY', message: '缺少或无效的原同步凭证 (X-Sync-Key)。' },
+      400
+    );
+  }
+
+  let body;
+  try {
+    body = JSON.parse(await context.request.text());
+  } catch {
+    return jsonResponse({ error: 'INVALID_JSON', message: '请求体不是有效 JSON' }, 400);
+  }
+
+  const rawNewKey = String(body?.newSyncKey || '').trim().toLowerCase();
+  if (!SYNC_KEY_RE.test(rawNewKey)) {
+    return jsonResponse(
+      { error: 'INVALID_NEW_SYNC_KEY', message: '缺少或无效的新同步凭证 (newSyncKey)。' },
+      400
+    );
+  }
+  const newKvKey = `u:${rawNewKey}`;
+  if (oldKvKey === newKvKey) {
+    return jsonResponse(
+      { error: 'SAME_SYNC_KEY', message: '新口令与原口令相同，无需迁移。' },
+      400
+    );
+  }
+
+  try {
+    const oldData = await readKvJson(kv, oldKvKey);
+    if (!oldData) {
+      return jsonResponse(
+        {
+          error: 'SYNC_SOURCE_NOT_FOUND',
+          message: '未找到原口令对应的云端数据，请确认空间名与原口令正确并先完成一次同步。',
+        },
+        404
+      );
+    }
+
+    const existingTarget = await readKvJson(kv, newKvKey);
+    if (existingTarget) {
+      return jsonResponse(
+        {
+          error: 'SYNC_TARGET_EXISTS',
+          message: '新口令对应的云端空间已存在数据，为防止误覆盖，请更换其他新口令。',
+        },
+        409
+      );
+    }
+
+    const normalized = normalizePayload(oldData);
+    await kv.put(newKvKey, JSON.stringify(normalized));
+    if (typeof kv.delete === 'function') {
+      await kv.delete(oldKvKey);
+    } else {
+      await kv.put(oldKvKey, '');
+    }
+
+    return jsonResponse({ ok: true, migrated: true });
+  } catch (err) {
+    return jsonResponse(
+      { error: 'KV_MIGRATE_FAILED', message: err?.message || '迁移云端同步口令失败' },
       500
     );
   }

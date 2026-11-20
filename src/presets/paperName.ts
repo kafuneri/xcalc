@@ -5,9 +5,9 @@ export const PAPER_YEARS: string[] = Array.from(
 
 export const PAPER_REGIONS_PINNED: string[] = [
   '国考',
-  '河北省考',
-  '天津市考',
-  '北京市考',
+  '河北',
+  '天津',
+  '北京',
 ];
 
 export const PAPER_REGIONS_ALPHA: string[] = [
@@ -41,8 +41,8 @@ export const PAPER_REGIONS_ALPHA: string[] = [
   '云南',
   '浙江',
   '重庆',
-  '深圳市考',
-  '广州市考',
+  '深圳',
+  '广州',
 ];
 
 export const PAPER_LEVELS: string[] = [
@@ -82,11 +82,30 @@ export interface PaperNameParts {
   index: string;
 }
 
+const CITY_EXAM_REGIONS = new Set(['北京', '天津', '上海', '重庆', '深圳', '广州']);
+
+export function formatPaperRegion(region: string, paperType = ''): string {
+  const trimmed = region.trim();
+  if (!trimmed) return '';
+  if (
+    trimmed === '国考' ||
+    trimmed.includes('事业单位') ||
+    trimmed.endsWith('省考') ||
+    trimmed.endsWith('市考') ||
+    trimmed.endsWith('省直') ||
+    paperType.startsWith('职测')
+  ) {
+    return trimmed;
+  }
+  return CITY_EXAM_REGIONS.has(trimmed) ? `${trimmed}市考` : `${trimmed}省考`;
+}
+
 export function buildPresetPaperName(parts: PaperNameParts): string {
   const yearPart = parts.year ? `${parts.year}年` : '';
+  const regionPart = formatPaperRegion(parts.region, parts.paperType);
   return [
     yearPart,
-    parts.region,
+    regionPart,
     parts.level,
     parts.paperType,
     parts.index,

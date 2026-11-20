@@ -1,4 +1,4 @@
-import { runAiAnalysis } from '../../shared/aiAnalysis.js';
+import { runAiAnalysis, runAiAnalysisStream } from '../../shared/aiAnalysis.js';
 
 const DAILY_SERVER_QUOTA = 8;
 
@@ -115,20 +115,69 @@ export async function onRequestPost(context) {
     }
   }
 
+  const serverModel = typeof body?.serverModel === 'string' ? body.serverModel : 'auto';
+  const serverEnv = {
+    ZHIPU_API_KEY: resolveEnvVar(context, 'ZHIPU_API_KEY'),
+    ZHIPU_BASE_URL: resolveEnvVar(context, 'ZHIPU_BASE_URL'),
+    CF_ACCOUNT_ID: resolveEnvVar(context, 'CF_ACCOUNT_ID'),
+    CF_API_TOKEN: resolveEnvVar(context, 'CF_API_TOKEN'),
+    AI_GATEWAY_API_KEY: resolveEnvVar(context, 'AI_GATEWAY_API_KEY'),
+    AI_GATEWAY_BASE_URL: resolveEnvVar(context, 'AI_GATEWAY_BASE_URL'),
+    GEMINI_API_KEY: resolveEnvVar(context, 'GEMINI_API_KEY'),
+  };
+
+  if (body?.stream === true) {
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        const sendEvent = (obj) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        };
+
+        try {
+          const result = await runAiAnalysisStream({
+            digest,
+            serverModel,
+            byok,
+            serverEnv,
+            onStatus: (message) => sendEvent({ type: 'status', message }),
+            onMeta: (meta) => sendEvent({ type: 'meta', ...meta }),
+            onDelta: (text) => sendEvent({ type: 'delta', text }),
+          });
+
+          if (rateKey && nextCount > 0 && kv) {
+            await kv.put(rateKey, String(nextCount)).catch(() => {});
+          }
+
+          sendEvent({ type: 'done', ...result });
+        } catch (err) {
+          sendEvent({
+            type: 'error',
+            status: Number(err?.status) || 502,
+            message: err?.message || 'AI 分析请求失败，请稍后重试',
+          });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(readable, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream; charset=UTF-8',
+        'Cache-Control': 'no-store, no-cache, no-transform',
+        Connection: 'keep-alive',
+      },
+    });
+  }
+
   try {
     const result = await runAiAnalysis({
       digest,
-      serverModel: typeof body?.serverModel === 'string' ? body.serverModel : 'auto',
+      serverModel,
       byok,
-      serverEnv: {
-        ZHIPU_API_KEY: resolveEnvVar(context, 'ZHIPU_API_KEY'),
-        ZHIPU_BASE_URL: resolveEnvVar(context, 'ZHIPU_BASE_URL'),
-        CF_ACCOUNT_ID: resolveEnvVar(context, 'CF_ACCOUNT_ID'),
-        CF_API_TOKEN: resolveEnvVar(context, 'CF_API_TOKEN'),
-        AI_GATEWAY_API_KEY: resolveEnvVar(context, 'AI_GATEWAY_API_KEY'),
-        AI_GATEWAY_BASE_URL: resolveEnvVar(context, 'AI_GATEWAY_BASE_URL'),
-        GEMINI_API_KEY: resolveEnvVar(context, 'GEMINI_API_KEY'),
-      },
+      serverEnv,
     });
 
     if (rateKey && nextCount > 0 && kv) {

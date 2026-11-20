@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { Cloud, CloudOff, Eye, EyeOff, RefreshCw, X } from '@lucide/vue';
+import { Cloud, CloudOff, Eye, EyeOff, KeyRound, RefreshCw, X } from '@lucide/vue';
 import type { HealthStatus, SyncProfile } from '../types';
 
 const props = defineProps<{
@@ -16,12 +16,17 @@ const emit = defineEmits<{
   connect: [spaceName: string, passphrase: string];
   syncNow: [];
   disconnect: [];
+  changePassphrase: [oldPassphrase: string, newPassphrase: string];
 }>();
 
 const spaceName = ref('');
 const passphrase = ref('');
 const showPass = ref(false);
 const localError = ref('');
+const showRekey = ref(false);
+const oldPassInput = ref('');
+const newPassInput = ref('');
+const confirmNewPass = ref('');
 
 watch(
   () => props.open,
@@ -30,6 +35,10 @@ watch(
       spaceName.value = props.profile.spaceName;
       passphrase.value = props.profile.passphrase;
       localError.value = '';
+      showRekey.value = false;
+      oldPassInput.value = props.profile.passphrase;
+      newPassInput.value = '';
+      confirmNewPass.value = '';
     }
   }
 );
@@ -80,6 +89,27 @@ function handleConnect() {
     return;
   }
   emit('connect', name, passphrase.value);
+}
+
+function handleRekey() {
+  localError.value = '';
+  if (oldPassInput.value.length < 6) {
+    localError.value = '原同步口令至少需要 6 位';
+    return;
+  }
+  if (newPassInput.value.length < 6) {
+    localError.value = '新同步口令至少需要 6 位';
+    return;
+  }
+  if (newPassInput.value !== confirmNewPass.value) {
+    localError.value = '两次输入的新同步口令不一致';
+    return;
+  }
+  if (newPassInput.value === oldPassInput.value) {
+    localError.value = '新同步口令不能与原口令相同';
+    return;
+  }
+  emit('changePassphrase', oldPassInput.value, newPassInput.value);
 }
 </script>
 
@@ -178,6 +208,17 @@ function handleConnect() {
             class="btn"
             type="button"
             :disabled="syncing || !health.kvReady"
+            @click="showRekey = !showRekey"
+          >
+            <KeyRound :size="15" />
+            <span>{{ showRekey ? '收起改密' : '修改口令' }}</span>
+          </button>
+
+          <button
+            v-if="profile.enabled"
+            class="btn"
+            type="button"
+            :disabled="syncing || !health.kvReady"
             @click="emit('syncNow')"
           >
             <RefreshCw :size="15" />
@@ -193,6 +234,60 @@ function handleConnect() {
             <Cloud :size="15" />
             <span>{{ profile.enabled ? '更新并同步' : '开启并合并云端数据' }}</span>
           </button>
+        </div>
+
+        <div
+          v-if="profile.enabled && showRekey"
+          style="
+            border-top: 1px dashed var(--border);
+            padding-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          "
+        >
+          <div style="font-size: 13px; font-weight: 600">
+            修改当前空间「{{ profile.spaceName }}」同步口令（自动迁移云端数据并失效旧口令）
+          </div>
+          <div>
+            <label class="field-label">原同步口令</label>
+            <input
+              v-model="oldPassInput"
+              class="input"
+              :type="showPass ? 'text' : 'password'"
+              placeholder="输入当前正在使用的口令"
+            />
+          </div>
+          <div>
+            <label class="field-label">新同步口令（至少 6 位）</label>
+            <input
+              v-model="newPassInput"
+              class="input"
+              :type="showPass ? 'text' : 'password'"
+              placeholder="输入新同步口令"
+            />
+          </div>
+          <div>
+            <label class="field-label">确认新口令</label>
+            <input
+              v-model="confirmNewPass"
+              class="input"
+              :type="showPass ? 'text' : 'password'"
+              placeholder="再次输入新同步口令"
+              @keyup.enter="handleRekey"
+            />
+          </div>
+          <div style="display: flex; justify-content: flex-end">
+            <button
+              class="btn btn-primary"
+              type="button"
+              :disabled="syncing"
+              @click="handleRekey"
+            >
+              <KeyRound :size="15" />
+              <span>{{ syncing ? '迁移中...' : '确认修改口令并迁移数据' }}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

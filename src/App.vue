@@ -50,6 +50,7 @@ import {
   saveThemePreference,
 } from './core/storage';
 import {
+  changeSyncPassphrase,
   checkCloudHealth,
   deriveSyncKey,
   pullCloudData,
@@ -248,6 +249,34 @@ function handleDisconnectSync() {
   syncError.value = '';
   saveSyncProfile(syncProfile.value);
   showToast('已断开云端绑定，本地数据保留');
+}
+
+async function handleChangePassphrase(oldPassphrase: string, newPassphrase: string) {
+  if (!syncProfile.value.enabled || !syncProfile.value.spaceName) return;
+  syncing.value = true;
+  syncError.value = '';
+  try {
+    await changeSyncPassphrase({
+      spaceName: syncProfile.value.spaceName,
+      oldPassphrase,
+      newPassphrase,
+    });
+    syncProfile.value = {
+      ...syncProfile.value,
+      passphrase: newPassphrase,
+      lastSyncedAt: Date.now(),
+    };
+    saveSyncProfile(syncProfile.value);
+    syncing.value = false;
+    await runSync(true);
+    if (!syncError.value) {
+      syncModalOpen.value = false;
+      showToast('同步口令已修改，云端数据已迁移');
+    }
+  } catch (err) {
+    syncError.value = err instanceof Error ? err.message : '修改同步口令失败';
+    syncing.value = false;
+  }
 }
 
 function handleSaveRecord(payload: {
@@ -658,6 +687,7 @@ onMounted(async () => {
       @connect="handleConnectSync"
       @sync-now="runSync(true)"
       @disconnect="handleDisconnectSync"
+      @change-passphrase="handleChangePassphrase"
     />
 
     <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>

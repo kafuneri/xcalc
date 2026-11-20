@@ -183,6 +183,9 @@ export function saveThemePreference(theme: 'light' | 'dark'): void {
 export function loadAiConfig(): AiAnalysisConfig {
   const validServerModels = new Set([
     'auto',
+    'nvidia:nemotron-3.5-super-vl-120b-a12b',
+    'nvidia:minimaxai/minimax-m3.1-flash',
+    'nvidia:nvidia/nemotron-3-ultra-550b-a55b',
     'zhipu:glm-4.7-flash',
     'cf:@cf/google/gemma-4-26b-a4b-it',
     'makers:auto',
@@ -211,8 +214,9 @@ export function loadAiConfig(): AiAnalysisConfig {
         parsed.mode === 'gemini-byok' || parsed.mode === 'openai-byok'
           ? parsed.mode
           : 'server',
-      serverModel: validServerModels.has(rawServerModel)
-        ? (rawServerModel as AiAnalysisConfig['serverModel'])
+      serverModel:
+        /^slot:\d+$/.test(rawServerModel) || validServerModels.has(rawServerModel)
+          ? (rawServerModel as AiAnalysisConfig['serverModel'])
         : 'auto',
       geminiKey: String(parsed.geminiKey || ''),
       openaiKey: String(parsed.openaiKey || ''),

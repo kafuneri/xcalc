@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { mergeSyncPayloads, normalizePayload } from './shared/syncMerge.js';
-import { runAiAnalysis } from './shared/aiAnalysis.js';
+import { runAiAnalysis, runAiAnalysisStream, listPublicServerSlots } from './shared/aiAnalysis.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOCAL_KV_FILE = path.resolve(__dirname, '.local-kv.json');
@@ -41,13 +41,7 @@ function readRequestBody(req) {
 
 function localApiPlugin(allEnv) {
   const serverAiEnv = {
-    ZHIPU_API_KEY: (allEnv.ZHIPU_API_KEY || '').trim(),
-    ZHIPU_BASE_URL: (allEnv.ZHIPU_BASE_URL || '').trim(),
-    CF_ACCOUNT_ID: (allEnv.CF_ACCOUNT_ID || '').trim(),
-    CF_API_TOKEN: (allEnv.CF_API_TOKEN || '').trim(),
-    AI_GATEWAY_API_KEY: (allEnv.AI_GATEWAY_API_KEY || '').trim(),
-    AI_GATEWAY_BASE_URL: (allEnv.AI_GATEWAY_BASE_URL || '').trim(),
-    GEMINI_API_KEY: (allEnv.GEMINI_API_KEY || '').trim(),
+    ...allEnv,
   };
 
   return {
@@ -57,17 +51,14 @@ function localApiPlugin(allEnv) {
         const urlPath = (req.url || '').split('?')[0];
 
         if (urlPath === '/api/health' && req.method === 'GET') {
+          const aiSlots = listPublicServerSlots(serverAiEnv);
           return sendJson(res, 200, {
             ok: true,
             platform: 'local-mock',
             kvReady: true,
             kvBindingName: '.local-kv.json',
-            aiReady: Boolean(
-              serverAiEnv.ZHIPU_API_KEY ||
-                (serverAiEnv.CF_ACCOUNT_ID && serverAiEnv.CF_API_TOKEN) ||
-                serverAiEnv.AI_GATEWAY_API_KEY ||
-                serverAiEnv.GEMINI_API_KEY
-            ),
+            aiReady: aiSlots.length > 0,
+            aiSlots,
             timestamp: Date.now(),
           });
         }
@@ -93,10 +84,48 @@ function localApiPlugin(allEnv) {
                     }
                   : { mode: 'server' };
 
+              const serverModel =
+                typeof parsed?.serverModel === 'string' ? parsed.serverModel : 'auto';
+
+              if (parsed?.stream === true) {
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'text/event-stream; charset=UTF-8');
+                res.setHeader('Cache-Control', 'no-store, no-cache, no-transform');
+                res.setHeader('Connection', 'keep-alive');
+                res.flushHeaders?.();
+
+                const sendEvent = (obj) => {
+                  if (!res.writableEnded) {
+                    res.write(`data: ${JSON.stringify(obj)}\n\n`);
+                  }
+                };
+
+                try {
+                  const result = await runAiAnalysisStream({
+                    digest: parsed?.digest,
+                    serverModel,
+                    byok,
+                    serverEnv: serverAiEnv,
+                    onStatus: (message) => sendEvent({ type: 'status', message }),
+                    onMeta: (meta) => sendEvent({ type: 'meta', ...meta }),
+                    onDelta: (text) => sendEvent({ type: 'delta', text }),
+                  });
+                  sendEvent({ type: 'done', ...result });
+                } catch (err) {
+                  sendEvent({
+                    type: 'error',
+                    status: Number(err?.status) || 502,
+                    message: err instanceof Error ? err.message : 'AI 分析请求失败',
+                  });
+                } finally {
+                  if (!res.writableEnded) res.end();
+                }
+                return;
+              }
+
               const result = await runAiAnalysis({
                 digest: parsed?.digest,
-                serverModel:
-                  typeof parsed?.serverModel === 'string' ? parsed.serverModel : 'auto',
+                serverModel,
                 byok,
                 serverEnv: serverAiEnv,
               });
@@ -146,6 +175,48 @@ function localApiPlugin(allEnv) {
               store[kvKey] = merged;
               writeLocalKvStore(store);
               return sendJson(res, 200, { ok: true, payload: merged });
+            } catch (err) {
+              return sendJson(res, 400, {
+                error: 'INVALID_JSON',
+                message: err instanceof Error ? err.message : '请求解析失败',
+              });
+            }
+          }
+
+          if (req.method === 'POST') {
+            try {
+              const bodyText = await readRequestBody(req);
+              const body = JSON.parse(bodyText);
+              const rawNewKey = String(body?.newSyncKey || '').trim().toLowerCase();
+              if (!SYNC_KEY_RE.test(rawNewKey)) {
+                return sendJson(res, 400, {
+                  error: 'INVALID_NEW_SYNC_KEY',
+                  message: '缺少或无效的新同步凭证 (newSyncKey)。',
+                });
+              }
+              const newKvKey = `u:${rawNewKey}`;
+              if (kvKey === newKvKey) {
+                return sendJson(res, 400, {
+                  error: 'SAME_SYNC_KEY',
+                  message: '新口令与原口令相同，无需迁移。',
+                });
+              }
+              if (!store[kvKey]) {
+                return sendJson(res, 404, {
+                  error: 'SYNC_SOURCE_NOT_FOUND',
+                  message: '未找到原口令对应的云端数据，请先完成一次同步。',
+                });
+              }
+              if (store[newKvKey]) {
+                return sendJson(res, 409, {
+                  error: 'SYNC_TARGET_EXISTS',
+                  message: '新口令对应的云端空间已存在数据，请更换其他新口令。',
+                });
+              }
+              store[newKvKey] = normalizePayload(store[kvKey]);
+              delete store[kvKey];
+              writeLocalKvStore(store);
+              return sendJson(res, 200, { ok: true, migrated: true });
             } catch (err) {
               return sendJson(res, 400, {
                 error: 'INVALID_JSON',
