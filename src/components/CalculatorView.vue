@@ -9,7 +9,13 @@ import {
   Sparkles,
 } from '@lucide/vue';
 import ModuleStepper from './ModuleStepper.vue';
-import type { CalculationResult, HistoryRecord, InputMode, Preset } from '../types';
+import type {
+  CalculationResult,
+  ExamCategory,
+  HistoryRecord,
+  InputMode,
+  Preset,
+} from '../types';
 import {
   calculateScore,
   clampModuleInput,
@@ -29,12 +35,16 @@ import {
   PAPER_REGIONS_PINNED,
   PAPER_TYPES,
   PAPER_YEARS,
+  ZHICE_LEVELS,
+  ZHICE_REGIONS_PINNED,
+  ZHICE_TYPES,
   buildPresetPaperName,
   getLocalDateString,
   type PaperNameParts,
 } from '../presets/paperName';
 
 const props = defineProps<{
+  examCategory: ExamCategory;
   presets: Preset[];
   activePresetId: string;
   loadedRecord: HistoryRecord | null;
@@ -207,11 +217,31 @@ function clearNameParts() {
   nameParts.index = '';
 }
 
+const pinnedRegions = computed(() =>
+  props.examCategory === 'zhice' ? ZHICE_REGIONS_PINNED : PAPER_REGIONS_PINNED
+);
+const paperLevels = computed(() =>
+  props.examCategory === 'zhice' ? ZHICE_LEVELS : PAPER_LEVELS
+);
+const paperTypes = computed(() =>
+  props.examCategory === 'zhice' ? ZHICE_TYPES : PAPER_TYPES
+);
+
+watch(
+  () => props.examCategory,
+  () => {
+    clearNameParts();
+  }
+);
+
 function handleSave(overwrite = false) {
   saveError.value = '';
   const trimmedName = paperName.value.trim();
   if (!trimmedName) {
-    saveError.value = '请输入试卷名称（例如：2025年国考地市级行测真题）';
+    saveError.value =
+      props.examCategory === 'zhice'
+        ? '请输入试卷名称（例如：2025年事业单位联考A类职测真题）'
+        : '请输入试卷名称（例如：2025年国考地市级行测真题）';
     return;
   }
 
@@ -610,7 +640,7 @@ function handleSave(overwrite = false) {
                 <option value="">省份/考区</option>
                 <optgroup label="置顶常用">
                   <option
-                    v-for="r in PAPER_REGIONS_PINNED"
+                    v-for="r in pinnedRegions"
                     :key="`pin-${r}`"
                     :value="r"
                   >
@@ -635,7 +665,7 @@ function handleSave(overwrite = false) {
                 @change="applyPresetNameParts"
               >
                 <option value="">类型(不限)</option>
-                <option v-for="lvl in PAPER_LEVELS" :key="lvl" :value="lvl">
+                <option v-for="lvl in paperLevels" :key="lvl" :value="lvl">
                   {{ lvl }}
                 </option>
               </select>
@@ -647,7 +677,7 @@ function handleSave(overwrite = false) {
                 @change="applyPresetNameParts"
               >
                 <option value="">真题/模拟</option>
-                <option v-for="t in PAPER_TYPES" :key="t" :value="t">
+                <option v-for="t in paperTypes" :key="t" :value="t">
                   {{ t }}
                 </option>
               </select>
@@ -672,7 +702,11 @@ function handleSave(overwrite = false) {
               v-model="paperName"
               class="input"
               type="text"
-              placeholder="例如：2025年国考地市级行测真题 / 粉笔模考第8季"
+              :placeholder="
+                examCategory === 'zhice'
+                  ? '例如：2025年事业单位联考A类职测真题'
+                  : '例如：2025年国考地市级行测真题 / 粉笔模考第8季'
+              "
               @keyup.enter="handleSave(Boolean(loadedRecord))"
             />
           </div>

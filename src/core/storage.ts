@@ -1,14 +1,24 @@
 import { BUILTIN_PRESETS } from '../presets/builtin';
-import type { HistoryRecord, Preset, SyncPayload, SyncProfile } from '../types';
+import type {
+  ExamCategory,
+  HistoryRecord,
+  Preset,
+  SyncPayload,
+  SyncProfile,
+} from '../types';
 import { SYNC_SCHEMA_VERSION, mergeSyncPayloads, normalizePayload } from '../../shared/syncMerge.js';
 
 const KEYS = {
   PRESETS: 'xc_calc_custom_presets_v1',
   RECORDS: 'xc_calc_history_records_v1',
   ACTIVE_PRESET: 'xc_calc_active_preset_id_v1',
+  EXAM_CATEGORY: 'xc_calc_exam_category_v1',
+  ACTIVE_PRESET_BY_CAT: 'xc_calc_active_presets_by_cat_v1',
   SYNC_PROFILE: 'xc_calc_sync_profile_v1',
   THEME: 'xc_calc_theme_v1',
 };
+
+const BUILTIN_ID_SET = new Set(BUILTIN_PRESETS.map((p) => p.id));
 
 export function createId(prefix = 'id'): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -22,20 +32,53 @@ export function loadCustomPresets(): Preset[] {
     const raw = localStorage.getItem(KEYS.PRESETS);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((p) => p && !p.builtIn) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((p) => p && !p.builtIn && !BUILTIN_ID_SET.has(p.id))
+      : [];
   } catch {
     return [];
   }
 }
 
 export function saveCustomPresets(presets: Preset[]): void {
-  const cleaned = presets.filter((p) => !p.builtIn);
+  const cleaned = presets.filter((p) => !p.builtIn && !BUILTIN_ID_SET.has(p.id));
   localStorage.setItem(KEYS.PRESETS, JSON.stringify(cleaned));
 }
 
 export function getAllAvailablePresets(customPresets: Preset[]): Preset[] {
-  const activeCustom = customPresets.filter((p) => !p.deletedAt);
+  const activeCustom = customPresets.filter(
+    (p) => !p.deletedAt && !BUILTIN_ID_SET.has(p.id)
+  );
   return [...BUILTIN_PRESETS, ...activeCustom];
+}
+
+export function loadExamCategory(): ExamCategory {
+  const saved = localStorage.getItem(KEYS.EXAM_CATEGORY);
+  return saved === 'zhice' ? 'zhice' : 'xingce';
+}
+
+export function saveExamCategory(category: ExamCategory): void {
+  localStorage.setItem(KEYS.EXAM_CATEGORY, category);
+}
+
+export function loadActivePresetMap(): Partial<Record<ExamCategory, string>> {
+  try {
+    const raw = localStorage.getItem(KEYS.ACTIVE_PRESET_BY_CAT);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return parsed as Partial<Record<ExamCategory, string>>;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  const legacy = localStorage.getItem(KEYS.ACTIVE_PRESET);
+  return legacy ? { xingce: legacy } : {};
+}
+
+export function saveActivePresetMap(map: Partial<Record<ExamCategory, string>>): void {
+  localStorage.setItem(KEYS.ACTIVE_PRESET_BY_CAT, JSON.stringify(map));
 }
 
 export function loadHistoryRecords(): HistoryRecord[] {

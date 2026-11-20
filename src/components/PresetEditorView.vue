@@ -12,7 +12,7 @@ import {
   Trash2,
   Upload,
 } from '@lucide/vue';
-import type { Preset, ScoreModule } from '../types';
+import type { ExamCategory, Preset, ScoreModule } from '../types';
 import {
   clonePreset,
   formatScore,
@@ -23,6 +23,7 @@ import {
 import { createId } from '../core/storage';
 
 const props = defineProps<{
+  examCategory: ExamCategory;
   presets: Preset[];
   activePresetId: string;
 }>();
@@ -55,13 +56,28 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.activePresetId,
+  (id) => {
+    if (props.presets.some((p) => p.id === id)) {
+      selectedId.value = id;
+    } else if (props.presets[0]) {
+      selectedId.value = props.presets[0].id;
+    }
+  }
+);
+
 const draftTotals = computed(() => {
   if (!draft.value) return { totalQuestions: 0, maxScore: 0 };
   return getPresetTotals(draft.value);
 });
 
-const isHundredExact = computed(
-  () => Math.abs(draftTotals.value.maxScore - 100) < 0.001
+const expectedMaxScore = computed(() =>
+  props.examCategory === 'zhice' ? 150 : 100
+);
+
+const isTargetScoreExact = computed(
+  () => Math.abs(draftTotals.value.maxScore - expectedMaxScore.value) < 0.001
 );
 
 function selectPreset(id: string) {
@@ -69,31 +85,61 @@ function selectPreset(id: string) {
 }
 
 function createBlankPreset() {
-  const newPreset: Preset = {
-    id: createId('preset'),
-    name: '自定义行测预设',
-    description: '',
-    builtIn: false,
-    updatedAt: Date.now(),
-    modules: [
-      { id: createId('mod'), name: '常识判断', questionCount: 20, scorePerQuestion: 0.5 },
-      { id: createId('mod'), name: '言语理解', questionCount: 30, scorePerQuestion: 0.8 },
-      { id: createId('mod'), name: '数量关系', questionCount: 10, scorePerQuestion: 1.0 },
-      {
-        id: createId('mod'),
-        name: '判断推理',
-        questionCount: 40,
-        scorePerQuestion: 0,
-        children: [
-          { id: createId('sub'), name: '图形推理', questionCount: 10, scorePerQuestion: 0.8 },
-          { id: createId('sub'), name: '定义判断', questionCount: 10, scorePerQuestion: 0.8 },
-          { id: createId('sub'), name: '类比推理', questionCount: 10, scorePerQuestion: 0.8 },
-          { id: createId('sub'), name: '逻辑判断', questionCount: 10, scorePerQuestion: 1.0 },
+  const isZhice = props.examCategory === 'zhice';
+  const newPreset: Preset = isZhice
+    ? {
+        id: createId('preset'),
+        name: '自定义职测预设',
+        description: '',
+        category: 'zhice',
+        builtIn: false,
+        updatedAt: Date.now(),
+        modules: [
+          { id: createId('mod'), name: '常识判断', questionCount: 20, scorePerQuestion: 1.0 },
+          { id: createId('mod'), name: '言语理解与表达', questionCount: 25, scorePerQuestion: 1.6 },
+          { id: createId('mod'), name: '数量关系', questionCount: 5, scorePerQuestion: 2.0 },
+          {
+            id: createId('mod'),
+            name: '判断推理',
+            questionCount: 35,
+            scorePerQuestion: 0,
+            children: [
+              { id: createId('sub'), name: '图形推理', questionCount: 5, scorePerQuestion: 1.2 },
+              { id: createId('sub'), name: '定义判断', questionCount: 10, scorePerQuestion: 1.4 },
+              { id: createId('sub'), name: '类比推理', questionCount: 10, scorePerQuestion: 1.2 },
+              { id: createId('sub'), name: '逻辑判断', questionCount: 10, scorePerQuestion: 1.8 },
+            ],
+          },
+          { id: createId('mod'), name: '资料分析', questionCount: 15, scorePerQuestion: 2.0 },
         ],
-      },
-      { id: createId('mod'), name: '资料分析', questionCount: 20, scorePerQuestion: 1.0 },
-    ],
-  };
+      }
+    : {
+        id: createId('preset'),
+        name: '自定义行测预设',
+        description: '',
+        category: 'xingce',
+        builtIn: false,
+        updatedAt: Date.now(),
+        modules: [
+          { id: createId('mod'), name: '政治理论', questionCount: 20, scorePerQuestion: 0.65 },
+          { id: createId('mod'), name: '常识判断', questionCount: 15, scorePerQuestion: 0.5 },
+          { id: createId('mod'), name: '言语理解与表达', questionCount: 30, scorePerQuestion: 0.8 },
+          { id: createId('mod'), name: '数量关系', questionCount: 10, scorePerQuestion: 1.0 },
+          {
+            id: createId('mod'),
+            name: '判断推理',
+            questionCount: 35,
+            scorePerQuestion: 0,
+            children: [
+              { id: createId('sub'), name: '图形推理', questionCount: 10, scorePerQuestion: 0.7 },
+              { id: createId('sub'), name: '定义判断', questionCount: 10, scorePerQuestion: 0.75 },
+              { id: createId('sub'), name: '类比推理', questionCount: 5, scorePerQuestion: 0.6 },
+              { id: createId('sub'), name: '逻辑判断', questionCount: 10, scorePerQuestion: 0.8 },
+            ],
+          },
+          { id: createId('mod'), name: '资料分析', questionCount: 20, scorePerQuestion: 1.0 },
+        ],
+      };
   emit('savePreset', newPreset);
   selectedId.value = newPreset.id;
 }
@@ -103,6 +149,7 @@ function duplicateCurrentPreset() {
   const copy = clonePreset(src);
   copy.id = createId('preset');
   copy.name = `${src.name}（副本）`;
+  copy.category = props.examCategory;
   copy.builtIn = false;
   copy.updatedAt = Date.now();
   delete copy.deletedAt;
@@ -407,17 +454,19 @@ function handleFileChange(e: Event) {
         <!-- Totals Banner -->
         <div
           class="alert-box tabular"
-          :class="isHundredExact ? 'alert-success' : 'alert-warning'"
+          :class="isTargetScoreExact ? 'alert-success' : 'alert-warning'"
           style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px"
         >
           <span>
             当前合计：<strong>{{ draftTotals.totalQuestions }} 题</strong> ·
             满分 <strong>{{ formatScore(draftTotals.maxScore) }} 分</strong>
           </span>
-          <span v-if="isHundredExact">满分正好 100 分</span>
+          <span v-if="isTargetScoreExact">
+            满分正好 {{ expectedMaxScore }} 分
+          </span>
           <span v-else>
-            提醒：当前满分不是 100 分（差值
-            {{ formatScore(draftTotals.maxScore - 100) }} 分）
+            提醒：当前满分不是 {{ expectedMaxScore }} 分（差值
+            {{ formatScore(draftTotals.maxScore - expectedMaxScore) }} 分）
           </span>
         </div>
 

@@ -15,26 +15,34 @@ import HistoryView from './components/HistoryView.vue';
 import SyncModal from './components/SyncModal.vue';
 import type {
   CalculationResult,
+  ExamCategory,
   HealthStatus,
   HistoryRecord,
   InputMode,
   Preset,
   SyncProfile,
 } from './types';
-import { clonePreset } from './core/calc';
+import {
+  clonePreset,
+  getRecordExamCategory,
+  inferExamCategory,
+} from './core/calc';
 import {
   buildSyncPayload,
   createId,
   exportBackupJson,
   getAllAvailablePresets,
   importBackupJson,
-  loadActivePresetId,
+  loadActivePresetMap,
   loadCustomPresets,
+  loadExamCategory,
   loadHistoryRecords,
   loadSyncProfile,
   loadThemePreference,
   saveActivePresetId,
+  saveActivePresetMap,
   saveCustomPresets,
+  saveExamCategory,
   saveHistoryRecords,
   saveSyncProfile,
   saveThemePreference,
@@ -53,9 +61,12 @@ type TabKey = 'calculator' | 'presets' | 'history';
 const siteConfig = getSiteConfig();
 
 const activeTab = ref<TabKey>('calculator');
+const examCategory = ref<ExamCategory>(loadExamCategory());
 const customPresets = ref<Preset[]>(loadCustomPresets());
 const records = ref<HistoryRecord[]>(loadHistoryRecords());
-const activePresetId = ref<string>(loadActivePresetId());
+const activePresetByCat = ref<Partial<Record<ExamCategory, string>>>(
+  loadActivePresetMap()
+);
 const loadedRecord = ref<HistoryRecord | null>(null);
 
 const theme = ref<'light' | 'dark'>(loadThemePreference());
@@ -77,8 +88,36 @@ const availablePresets = computed(() =>
   getAllAvailablePresets(customPresets.value)
 );
 
+const scopedPresets = computed(() =>
+  availablePresets.value.filter(
+    (p) => inferExamCategory(p) === examCategory.value
+  )
+);
+
+const activePresetId = computed<string>({
+  get() {
+    const preferred = activePresetByCat.value[examCategory.value];
+    if (preferred && scopedPresets.value.some((p) => p.id === preferred)) {
+      return preferred;
+    }
+    return scopedPresets.value[0]?.id || availablePresets.value[0]?.id || '';
+  },
+  set(id: string) {
+    activePresetByCat.value = {
+      ...activePresetByCat.value,
+      [examCategory.value]: id,
+    };
+    saveActivePresetMap(activePresetByCat.value);
+    saveActivePresetId(id);
+  },
+});
+
+const scopedRecords = computed(() =>
+  records.value.filter((r) => getRecordExamCategory(r) === examCategory.value)
+);
+
 const activeRecordCount = computed(
-  () => records.value.filter((r) => !r.deletedAt).length
+  () => scopedRecords.value.filter((r) => !r.deletedAt).length
 );
 
 watch(
@@ -90,9 +129,28 @@ watch(
   { immediate: true }
 );
 
-watch(activePresetId, (id) => {
-  saveActivePresetId(id);
-});
+watch(
+  examCategory,
+  (cat) => {
+    saveExamCategory(cat);
+    document.title =
+      cat === 'zhice'
+        ? '职测分数计算器 · 估分预设与套卷记录'
+        : '行测分数计算器 · 估分预设与套卷记录';
+  },
+  { immediate: true }
+);
+
+function switchExamCategory(next: ExamCategory) {
+  if (examCategory.value === next) return;
+  loadedRecord.value = null;
+  examCategory.value = next;
+  showToast(
+    next === 'zhice'
+      ? '已切换至「职测」模式（150分制）'
+      : '已切换至「行测」模式（100分制）'
+  );
+}
 
 function showToast(msg: string) {
   toastMsg.value = msg;
@@ -244,16 +302,24 @@ function handleSaveRecord(payload: {
 }
 
 function handleLoadRecord(rec: HistoryRecord) {
+  const targetCategory = getRecordExamCategory(rec);
+  if (examCategory.value !== targetCategory) {
+    examCategory.value = targetCategory;
+  }
+
   const snapshot = clonePreset(rec.presetSnapshot);
   // Ensure the record's preset exists in availablePresets so inputs match accurately
   const exists = availablePresets.value.some((p) => p.id === snapshot.id);
   if (!exists && !snapshot.builtIn) {
+    snapshot.category = snapshot.category || targetCategory;
     snapshot.updatedAt = Date.now();
     delete snapshot.deletedAt;
     customPresets.value.push(snapshot);
     persistLocal();
   }
-  activePresetId.value = exists ? snapshot.id : availablePresets.value[0].id;
+  activePresetId.value = exists
+    ? snapshot.id
+    : scopedPresets.value[0]?.id || availablePresets.value[0].id;
   if (customPresets.value.some((p) => p.id === snapshot.id && !p.deletedAt)) {
     activePresetId.value = snapshot.id;
   }
@@ -319,7 +385,9 @@ function handleDeletePreset(id: string) {
     deletedAt: now,
   };
   if (activePresetId.value === id) {
-    activePresetId.value = availablePresets.value[0].id;
+    activePresetId.value =
+      scopedPresets.value.find((p) => p.id !== id)?.id ||
+      availablePresets.value[0].id;
   }
   persistLocal();
   scheduleAutoSync();
@@ -384,7 +452,29 @@ onMounted(async () => {
             <Calculator :size="20" />
           </div>
           <div>
-            <h1 class="brand-title">行测分数计算器</h1>
+            <div class="brand-title-row">
+              <h1 class="brand-title">
+                {{ examCategory === 'zhice' ? '职测分数计算器' : '行测分数计算器' }}
+              </h1>
+              <div class="exam-mode-switch" role="group" aria-label="考试模式切换">
+                <button
+                  type="button"
+                  class="exam-mode-btn"
+                  :class="{ active: examCategory === 'xingce' }"
+                  @click="switchExamCategory('xingce')"
+                >
+                  行测
+                </button>
+                <button
+                  type="button"
+                  class="exam-mode-btn"
+                  :class="{ active: examCategory === 'zhice' }"
+                  @click="switchExamCategory('zhice')"
+                >
+                  职测
+                </button>
+              </div>
+            </div>
             <div v-if="siteConfig.topLinks.length > 0" class="brand-links">
               <template
                 v-for="(link, idx) in siteConfig.topLinks"
@@ -462,7 +552,8 @@ onMounted(async () => {
     <main class="main-container">
       <CalculatorView
         v-show="activeTab === 'calculator'"
-        :presets="availablePresets"
+        :exam-category="examCategory"
+        :presets="scopedPresets"
         :active-preset-id="activePresetId"
         :loaded-record="loadedRecord"
         @update:active-preset-id="activePresetId = $event"
@@ -473,7 +564,8 @@ onMounted(async () => {
 
       <PresetEditorView
         v-if="activeTab === 'presets'"
-        :presets="availablePresets"
+        :exam-category="examCategory"
+        :presets="scopedPresets"
         :active-preset-id="activePresetId"
         @update:active-preset-id="activePresetId = $event"
         @save-preset="handleSavePreset"
@@ -484,7 +576,8 @@ onMounted(async () => {
 
       <HistoryView
         v-if="activeTab === 'history'"
-        :records="records"
+        :exam-category="examCategory"
+        :records="scopedRecords"
         @load-record="handleLoadRecord"
         @delete-record="handleDeleteRecord"
         @update-meta="handleUpdateRecordMeta"

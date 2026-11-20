@@ -124,11 +124,49 @@ button {
   flex-shrink: 0;
 }
 
+.brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .brand-title {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
   line-height: 1.2;
+}
+
+.exam-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.exam-mode-btn {
+  border: none;
+  background: transparent;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  transition: all 0.15s ease;
+}
+
+.exam-mode-btn:hover {
+  color: var(--text);
+}
+
+.exam-mode-btn.active {
+  background: var(--primary);
+  color: #fff;
 }
 
 .brand-sub {
@@ -926,6 +964,11 @@ button {
 
   .brand-title {
     font-size: 15px;
+  }
+
+  .exam-mode-btn {
+    padding: 2px 6px;
+    font-size: 11px;
   }
 
   .brand-sub {

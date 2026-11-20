@@ -9,11 +9,12 @@ import {
   Search,
   Trash2,
 } from '@lucide/vue';
-import type { HistoryRecord } from '../types';
+import type { ExamCategory, HistoryRecord } from '../types';
 import { formatAccuracy, formatScore } from '../core/calc';
 import { getLocalDateString } from '../presets/paperName';
 
 const props = defineProps<{
+  examCategory: ExamCategory;
   records: HistoryRecord[];
 }>();
 
@@ -111,7 +112,7 @@ function confirmDelete(rec: HistoryRecord) {
         </div>
 
         <span class="pill pill-neutral tabular">
-          共 {{ filteredRecords.length }} 条记录
+          {{ examCategory === 'zhice' ? '职测' : '行测' }} · 共 {{ filteredRecords.length }} 条记录
         </span>
 
         <button class="btn btn-sm" type="button" @click="emit('exportBackup')">

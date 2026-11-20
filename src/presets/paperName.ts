@@ -55,6 +55,17 @@ export const PAPER_LEVELS: string[] = [
 
 export const PAPER_TYPES: string[] = ['行测真题', '行测模拟题'];
 
+export const ZHICE_REGIONS_PINNED: string[] = [
+  '事业单位联考',
+  '河北省直',
+  '天津事业单位',
+  '北京事业单位',
+];
+
+export const ZHICE_LEVELS: string[] = ['A类', 'B类', 'C类', 'D类', 'E类'];
+
+export const ZHICE_TYPES: string[] = ['职测真题', '职测模拟题'];
+
 export const PAPER_INDEXES: string[] = [
   '（一）',
   '（二）',

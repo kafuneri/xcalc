@@ -1,5 +1,7 @@
 import type {
   CalculationResult,
+  ExamCategory,
+  HistoryRecord,
   InputMode,
   ModuleResult,
   Preset,
@@ -282,4 +284,38 @@ export function migrateInputsBetweenPresets(
 
 export function clonePreset(preset: Preset): Preset {
   return JSON.parse(JSON.stringify(preset)) as Preset;
+}
+
+const ZHICE_HINT_RE = /职测|职业能力倾向测验|事业单位|sydw/i;
+
+/**
+ * Determine whether a preset belongs to 'xingce' (100-pt civil service exam)
+ * or 'zhice' (150-pt public institution exam), supporting legacy presets without explicit category.
+ */
+export function inferExamCategory(
+  preset: Pick<Preset, 'id' | 'name' | 'category' | 'modules'>
+): ExamCategory {
+  if (preset.category === 'xingce' || preset.category === 'zhice') {
+    return preset.category;
+  }
+  if (ZHICE_HINT_RE.test(`${preset.id} ${preset.name}`)) {
+    return 'zhice';
+  }
+  const { maxScore } = getPresetTotals(preset);
+  if (maxScore >= 140) {
+    return 'zhice';
+  }
+  return 'xingce';
+}
+
+export function getRecordExamCategory(
+  record: Pick<HistoryRecord, 'paperName' | 'presetSnapshot'>
+): ExamCategory {
+  if (record.presetSnapshot.category === 'xingce' || record.presetSnapshot.category === 'zhice') {
+    return record.presetSnapshot.category;
+  }
+  if (ZHICE_HINT_RE.test(record.paperName)) {
+    return 'zhice';
+  }
+  return inferExamCategory(record.presetSnapshot);
 }

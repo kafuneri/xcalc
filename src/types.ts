@@ -1,4 +1,5 @@
 export type InputMode = 'wrong' | 'correct';
+export type ExamCategory = 'xingce' | 'zhice';
 
 export interface ScoreModule {
   id: string;
@@ -15,6 +16,7 @@ export interface Preset {
   id: string;
   name: string;
   description?: string;
+  category?: ExamCategory;
   builtIn: boolean;
   modules: ScoreModule[];
   updatedAt: number;

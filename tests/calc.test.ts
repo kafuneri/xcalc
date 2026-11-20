@@ -4,7 +4,9 @@ import {
   calculateScore,
   convertInputsMode,
   getPresetTotals,
+  getRecordExamCategory,
   hasEnteredInputs,
+  inferExamCategory,
   migrateInputsBetweenPresets,
 } from '../src/core/calc';
 import {
@@ -17,23 +19,30 @@ import { getSiteConfig, parseTopLinks } from '../src/core/siteConfig';
 import { mergeSyncPayloads } from '../shared/syncMerge.js';
 
 describe('built-in presets sanity check', () => {
-  it('sums exactly to 100 points for all built-in presets', () => {
+  it('sums exactly to 100 points for xingce and 150 points for zhice across all 10 built-in presets', () => {
     const totals = BUILTIN_PRESETS.map((p) => ({
       id: p.id,
+      category: inferExamCategory(p),
       ...getPresetTotals(p),
     }));
 
     expect(totals).toEqual([
-      { id: 'builtin-guokao-2025-130', totalQuestions: 130, maxScore: 100 },
-      { id: 'builtin-yijiu-130', totalQuestions: 130, maxScore: 100 },
-      { id: 'builtin-guokao-2025-135', totalQuestions: 135, maxScore: 100 },
-      { id: 'builtin-shengkao-120', totalQuestions: 120, maxScore: 100 },
+      { id: 'preset-mwm5xsp6-dgd6k', category: 'xingce', totalQuestions: 130, maxScore: 100 },
+      { id: 'preset-2025gk-ds-130', category: 'xingce', totalQuestions: 130, maxScore: 100 },
+      { id: 'preset-2025gk-fs-135', category: 'xingce', totalQuestions: 135, maxScore: 100 },
+      { id: 'preset-2024gk-ds-130', category: 'xingce', totalQuestions: 130, maxScore: 100 },
+      { id: 'preset-2024gk-fs-135', category: 'xingce', totalQuestions: 135, maxScore: 100 },
+      { id: 'preset-sydw-a-100', category: 'zhice', totalQuestions: 100, maxScore: 150 },
+      { id: 'preset-sydw-b-100', category: 'zhice', totalQuestions: 100, maxScore: 150 },
+      { id: 'preset-sydw-c-100', category: 'zhice', totalQuestions: 100, maxScore: 150 },
+      { id: 'preset-sydw-d-100', category: 'zhice', totalQuestions: 100, maxScore: 150 },
+      { id: 'preset-sydw-e-100', category: 'zhice', totalQuestions: 100, maxScore: 150 },
     ]);
   });
 });
 
 describe('calculateScore', () => {
-  const preset130 = BUILTIN_PRESETS[0];
+  const preset130 = BUILTIN_PRESETS.find((p) => p.id === 'preset-2025gk-ds-130')!;
 
   it('gives full score when 0 wrong in wrong-mode', () => {
     const result = calculateScore(preset130, {}, 'wrong');
@@ -46,36 +55,37 @@ describe('calculateScore', () => {
 
   it('computes leaf and parent module scores without floating point drift', () => {
     const wrongInputs = {
-      'mod-politics': 5,
-      'mod-commonsense': 5,
-      'mod-verbal': 4,
-      'mod-quant': 3,
-      'mod-reasoning-graph': 2,
-      'mod-reasoning-def': 1,
-      'mod-reasoning-analogy': 1,
-      'mod-reasoning-logic': 2,
-      'mod-data': 2,
+      'mod-25ds-politics': 5,
+      'mod-25ds-commonsense': 5,
+      'mod-25ds-verbal': 4,
+      'mod-25ds-quant': 3,
+      'sub-25ds-graph': 2,
+      'sub-25ds-def': 1,
+      'sub-25ds-analogy': 1,
+      'sub-25ds-logic': 2,
+      'mod-25ds-data': 2,
     };
 
     const result = calculateScore(preset130, wrongInputs, 'wrong');
     expect(result.totalWrong).toBe(25);
     expect(result.totalCorrect).toBe(105);
+    // lost: 5*0.65(3.25) + 5*0.5(2.5) + 4*0.8(3.2) + 3*1(3) + 2*0.7(1.4) + 1*0.75(0.75) + 1*0.6(0.6) + 2*0.8(1.6) + 2*1(2) = 18.3 -> 81.7
     expect(result.totalScore).toBe(81.7);
 
-    const reasoning = result.modules.find((m) => m.moduleId === 'mod-reasoning');
+    const reasoning = result.modules.find((m) => m.moduleId === 'mod-25ds-reasoning');
     expect(reasoning?.questionCount).toBe(35);
     expect(reasoning?.correctCount).toBe(29);
     expect(reasoning?.wrongCount).toBe(6);
-    expect(reasoning?.score).toBe(20.4);
-    expect(reasoning?.children?.map((c) => c.score)).toEqual([4.8, 7.2, 2, 6.4]);
+    expect(reasoning?.score).toBe(21.15);
+    expect(reasoning?.children?.map((c) => c.score)).toEqual([5.6, 6.75, 2.4, 6.4]);
   });
 
   it('produces identical result after converting inputs from wrong to correct mode', () => {
     const wrongInputs = {
-      'mod-politics': 4,
-      'mod-verbal': 6,
-      'mod-reasoning-graph': 3,
-      'mod-data': 1,
+      'mod-25ds-politics': 4,
+      'mod-25ds-verbal': 6,
+      'sub-25ds-graph': 3,
+      'mod-25ds-data': 1,
     };
 
     const wrongEval = calculateScore(preset130, wrongInputs, 'wrong');
@@ -90,11 +100,11 @@ describe('calculateScore', () => {
   it('clamps out-of-range inputs safely', () => {
     const result = calculateScore(
       preset130,
-      { 'mod-politics': 999, 'mod-data': -5 },
+      { 'mod-25ds-politics': 999, 'mod-25ds-data': -5 },
       'wrong'
     );
-    const politics = result.modules.find((m) => m.moduleId === 'mod-politics');
-    const data = result.modules.find((m) => m.moduleId === 'mod-data');
+    const politics = result.modules.find((m) => m.moduleId === 'mod-25ds-politics');
+    const data = result.modules.find((m) => m.moduleId === 'mod-25ds-data');
     expect(politics?.wrongCount).toBe(20);
     expect(politics?.score).toBe(0);
     expect(data?.wrongCount).toBe(0);
@@ -102,31 +112,31 @@ describe('calculateScore', () => {
   });
 
   it('preserves entered counts by module name when switching between guokao and yijiu', () => {
-    const guokao = BUILTIN_PRESETS[0];
-    const yijiu = BUILTIN_PRESETS[1];
+    const guokao = BUILTIN_PRESETS.find((p) => p.id === 'preset-2025gk-ds-130')!;
+    const yijiu = BUILTIN_PRESETS[0];
     const wrongInputs = {
-      'mod-politics': 4,
-      'mod-commonsense': 6,
-      'mod-verbal': 5,
-      'mod-quant': 3,
-      'mod-reasoning-graph': 2,
-      'mod-reasoning-def': 1,
-      'mod-reasoning-analogy': 1,
-      'mod-reasoning-logic': 2,
-      'mod-data': 2,
+      'mod-25ds-politics': 4,
+      'mod-25ds-commonsense': 6,
+      'mod-25ds-verbal': 5,
+      'mod-25ds-quant': 3,
+      'sub-25ds-graph': 2,
+      'sub-25ds-def': 1,
+      'sub-25ds-analogy': 1,
+      'sub-25ds-logic': 2,
+      'mod-25ds-data': 2,
     };
 
     const migrated = migrateInputsBetweenPresets(guokao, yijiu, wrongInputs);
     expect(migrated).toEqual({
-      'mod-yj-politics': 4,
-      'mod-yj-commonsense': 6,
-      'mod-yj-verbal': 5,
-      'mod-yj-quant': 3,
-      'mod-yj-graph': 2,
-      'mod-yj-def': 1,
-      'mod-yj-analogy': 1,
-      'mod-yj-logic': 2,
-      'mod-yj-data': 2,
+      'mod-mwm5xsp6-05atn': 4,
+      'mod-mwm5xsp6-t7c4o': 6,
+      'mod-mwm5xsp6-ce9q8': 5,
+      'mod-mwm5xsp6-33g8b': 3,
+      'sub-mwm5xsp6-b39ik': 2,
+      'sub-mwm5xsp6-5fbqp': 1,
+      'sub-mwm5xsp6-qefnz': 1,
+      'sub-mwm5xsp6-nk401': 2,
+      'mod-mwm5xsp6-g4mo9': 2,
     });
 
     const yijiuResult = calculateScore(yijiu, migrated, 'wrong');
@@ -260,5 +270,31 @@ describe('siteConfig env parsing', () => {
     expect(cfg.vercountEnabled).toBe(true);
     expect(cfg.mpsBeianUrl).toContain('code=11000000000001');
     expect(cfg.icpBeianText).toBe('京ICP备2025000001号');
+  });
+});
+
+describe('zhice preset evaluation & category inference', () => {
+  it('infers zhice category and evaluates zhice D-class preset cleanly', () => {
+    const zhiceD = BUILTIN_PRESETS.find((p) => p.id === 'preset-sydw-d-100')!;
+    const wrongInputs = {
+      'mod-sydwd-commonsense': 5,
+      'sub-sydwd-cloze': 3,
+      'sub-sydwd-reading': 2,
+      'sub-sydwd-def': 1,
+      'sub-sydwd-analogy': 2,
+      'sub-sydwd-logic': 1,
+      'sub-sydwd-quant': 2,
+      'sub-sydwd-data': 1,
+      'mod-sydwd-strategy': 5,
+    };
+    const res = calculateScore(zhiceD, wrongInputs, 'wrong');
+    expect(res.maxScore).toBe(150);
+    expect(res.totalQuestions).toBe(100);
+    expect(
+      getRecordExamCategory({
+        paperName: '2025年事业单位联考D类职测真题',
+        presetSnapshot: { ...zhiceD, category: undefined },
+      })
+    ).toBe('zhice');
   });
 });
