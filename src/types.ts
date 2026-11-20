@@ -79,4 +79,71 @@ export interface HealthStatus {
   platform: 'edgeone' | 'local-mock' | 'static-only';
   kvReady: boolean;
   kvBindingName?: string;
+  aiReady?: boolean;
+}
+
+export type ModuleTierStatus = 'strength' | 'weakness' | 'volatile' | 'normal';
+
+export interface ModuleAnalytics {
+  moduleName: string;
+  isSubModule: boolean;
+  parentName?: string;
+  sampleCount: number;
+  totalQuestions: number;
+  totalCorrect: number;
+  avgAccuracy: number;
+  avgScore: number;
+  avgMaxScore: number;
+  avgLostScore: number;
+  minAccuracy: number;
+  maxAccuracy: number;
+  stdDevAccuracy: number;
+  latestAccuracy: number;
+  trendDelta: number | null;
+  controllabilityWeight: number;
+  priorityScore: number;
+  status: ModuleTierStatus;
+  ruleAdvice: string;
+}
+
+export interface AnalysisReport {
+  recordCount: number;
+  avgScore: number;
+  bestScore: number;
+  latestScore: number;
+  avgAccuracy: number;
+  recentScoreDelta: number | null;
+  leafModules: ModuleAnalytics[];
+  parentModules: ModuleAnalytics[];
+  strengths: ModuleAnalytics[];
+  priorities: ModuleAnalytics[];
+}
+
+export type AiProviderMode = 'server' | 'gemini-byok' | 'openai-byok';
+
+export type ServerModelChoice =
+  | 'auto'
+  | 'zhipu:glm-4.7-flash'
+  | 'cf:@cf/google/gemma-4-26b-a4b-it'
+  | 'makers:auto'
+  | 'makers:google/gemini-4-hydrogen'
+  | 'makers:google/gemini-3.8-flash'
+  | 'makers:google/gemini-3.6-flash'
+  | 'makers:google/gemini-3.5-flash-lite';
+
+export interface AiAnalysisConfig {
+  mode: AiProviderMode;
+  serverModel: ServerModelChoice;
+  geminiKey: string;
+  openaiKey: string;
+  openaiBaseUrl: string;
+  openaiModel: string;
+}
+
+export interface AiAnalysisResult {
+  fingerprint: string;
+  provider: string;
+  model: string;
+  content: string;
+  createdAt: number;
 }

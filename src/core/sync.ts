@@ -1,4 +1,8 @@
-import type { HealthStatus, SyncPayload } from '../types';
+import type {
+  AiAnalysisConfig,
+  HealthStatus,
+  SyncPayload,
+} from '../types';
 import { normalizePayload } from '../../shared/syncMerge.js';
 
 const SHA256_K = new Uint32Array([
@@ -124,10 +128,58 @@ export async function checkCloudHealth(): Promise<HealthStatus> {
       platform: data.platform === 'local-mock' ? 'local-mock' : 'edgeone',
       kvReady: Boolean(data.kvReady),
       kvBindingName: data.kvBindingName,
+      aiReady: Boolean(data.aiReady),
     };
   } catch {
-    return { ok: false, platform: 'static-only', kvReady: false };
+    return { ok: false, platform: 'static-only', kvReady: false, aiReady: false };
   }
+}
+
+export async function requestAiAnalysis(params: {
+  digest: Record<string, unknown>;
+  aiConfig: AiAnalysisConfig;
+  syncKey?: string;
+}): Promise<{
+  provider: string;
+  model: string;
+  content: string;
+}> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Ai-Mode': params.aiConfig.mode,
+  };
+
+  if (params.syncKey) {
+    headers['X-Sync-Key'] = params.syncKey;
+  }
+
+  if (params.aiConfig.mode === 'gemini-byok') {
+    headers['X-Ai-Key'] = params.aiConfig.geminiKey.trim();
+  } else if (params.aiConfig.mode === 'openai-byok') {
+    headers['X-Ai-Key'] = params.aiConfig.openaiKey.trim();
+    headers['X-Ai-Base-Url'] = params.aiConfig.openaiBaseUrl.trim();
+    headers['X-Ai-Model'] = params.aiConfig.openaiModel.trim();
+  }
+
+  const res = await fetch('/api/analyze', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      digest: params.digest,
+      serverModel: params.aiConfig.serverModel || 'auto',
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || `AI 分析请求失败 (${res.status})`);
+  }
+
+  return {
+    provider: String(data.provider || ''),
+    model: String(data.model || ''),
+    content: String(data.content || ''),
+  };
 }
 
 export async function pullCloudData(syncKey: string): Promise<{

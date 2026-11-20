@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import {
+  BarChart3,
   Calculator,
   Cloud,
   History,
@@ -12,6 +13,7 @@ import {
 import CalculatorView from './components/CalculatorView.vue';
 import PresetEditorView from './components/PresetEditorView.vue';
 import HistoryView from './components/HistoryView.vue';
+import AnalysisView from './components/AnalysisView.vue';
 import SyncModal from './components/SyncModal.vue';
 import type {
   CalculationResult,
@@ -56,7 +58,7 @@ import {
 import { getSiteConfig } from './core/siteConfig';
 import { mergeSyncPayloads } from '../shared/syncMerge.js';
 
-type TabKey = 'calculator' | 'presets' | 'history';
+type TabKey = 'calculator' | 'presets' | 'history' | 'analysis';
 
 const siteConfig = getSiteConfig();
 
@@ -523,6 +525,15 @@ onMounted(async () => {
               {{ activeRecordCount }}
             </span>
           </button>
+          <button
+            type="button"
+            class="nav-tab"
+            :class="{ active: activeTab === 'analysis' }"
+            @click="activeTab = 'analysis'"
+          >
+            <BarChart3 :size="15" />
+            <span>复盘分析</span>
+          </button>
         </nav>
 
         <div class="topbar-actions">
@@ -582,6 +593,14 @@ onMounted(async () => {
         @delete-record="handleDeleteRecord"
         @update-meta="handleUpdateRecordMeta"
         @export-backup="handleExportBackup"
+      />
+
+      <AnalysisView
+        v-if="activeTab === 'analysis'"
+        :exam-category="examCategory"
+        :records="scopedRecords"
+        :health="health"
+        :sync-profile="syncProfile"
       />
     </main>
 

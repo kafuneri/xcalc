@@ -1,5 +1,7 @@
 import { BUILTIN_PRESETS } from '../presets/builtin';
 import type {
+  AiAnalysisConfig,
+  AiAnalysisResult,
   ExamCategory,
   HistoryRecord,
   Preset,
@@ -16,6 +18,8 @@ const KEYS = {
   ACTIVE_PRESET_BY_CAT: 'xc_calc_active_presets_by_cat_v1',
   SYNC_PROFILE: 'xc_calc_sync_profile_v1',
   THEME: 'xc_calc_theme_v1',
+  AI_CONFIG: 'xc_calc_ai_config_v1',
+  AI_CACHE: 'xc_calc_ai_cache_v1',
 };
 
 const BUILTIN_ID_SET = new Set(BUILTIN_PRESETS.map((p) => p.id));
@@ -174,4 +178,75 @@ export function loadThemePreference(): 'light' | 'dark' {
 
 export function saveThemePreference(theme: 'light' | 'dark'): void {
   localStorage.setItem(KEYS.THEME, theme);
+}
+
+export function loadAiConfig(): AiAnalysisConfig {
+  const validServerModels = new Set([
+    'auto',
+    'zhipu:glm-4.7-flash',
+    'cf:@cf/google/gemma-4-26b-a4b-it',
+    'makers:auto',
+    'makers:google/gemini-4-hydrogen',
+    'makers:google/gemini-3.8-flash',
+    'makers:google/gemini-3.6-flash',
+    'makers:google/gemini-3.5-flash-lite',
+  ]);
+
+  try {
+    const raw = localStorage.getItem(KEYS.AI_CONFIG);
+    if (!raw) {
+      return {
+        mode: 'server',
+        serverModel: 'auto',
+        geminiKey: '',
+        openaiKey: '',
+        openaiBaseUrl: 'https://api.deepseek.com/v1',
+        openaiModel: 'deepseek-chat',
+      };
+    }
+    const parsed = JSON.parse(raw);
+    const rawServerModel = String(parsed.serverModel || 'auto');
+    return {
+      mode:
+        parsed.mode === 'gemini-byok' || parsed.mode === 'openai-byok'
+          ? parsed.mode
+          : 'server',
+      serverModel: validServerModels.has(rawServerModel)
+        ? (rawServerModel as AiAnalysisConfig['serverModel'])
+        : 'auto',
+      geminiKey: String(parsed.geminiKey || ''),
+      openaiKey: String(parsed.openaiKey || ''),
+      openaiBaseUrl: String(parsed.openaiBaseUrl || 'https://api.deepseek.com/v1'),
+      openaiModel: String(parsed.openaiModel || 'deepseek-chat'),
+    };
+  } catch {
+    return {
+      mode: 'server',
+      serverModel: 'auto',
+      geminiKey: '',
+      openaiKey: '',
+      openaiBaseUrl: 'https://api.deepseek.com/v1',
+      openaiModel: 'deepseek-chat',
+    };
+  }
+}
+
+export function saveAiConfig(config: AiAnalysisConfig): void {
+  localStorage.setItem(KEYS.AI_CONFIG, JSON.stringify(config));
+}
+
+export function loadAiResultCache(): AiAnalysisResult | null {
+  try {
+    const raw = localStorage.getItem(KEYS.AI_CACHE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.content !== 'string') return null;
+    return parsed as AiAnalysisResult;
+  } catch {
+    return null;
+  }
+}
+
+export function saveAiResultCache(result: AiAnalysisResult): void {
+  localStorage.setItem(KEYS.AI_CACHE, JSON.stringify(result));
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BUILTIN_PRESETS } from '../src/presets/builtin';
 import {
   calculateScore,
@@ -16,7 +16,14 @@ import {
 } from '../src/presets/paperName';
 import { sha256HexFallback } from '../src/core/sync';
 import { getSiteConfig, parseTopLinks } from '../src/core/siteConfig';
+import {
+  analyzeHistoryRecords,
+  buildAiSummaryDigest,
+  buildRecordsFingerprint,
+} from '../src/core/analytics';
+import { renderSafeMarkdown } from '../src/core/markdown';
 import { mergeSyncPayloads } from '../shared/syncMerge.js';
+import { runAiAnalysis } from '../shared/aiAnalysis.js';
 
 describe('built-in presets sanity check', () => {
   it('sums exactly to 100 points for xingce and 150 points for zhice across all 10 built-in presets', () => {
@@ -273,8 +280,81 @@ describe('siteConfig env parsing', () => {
   });
 });
 
-describe('zhice preset evaluation & category inference', () => {
-  it('infers zhice category and evaluates zhice D-class preset cleanly', () => {
+describe('analytics engine (path 3 layer 1)', () => {
+  it('aggregates across guokao and yijiu presets and prioritizes high-ROI weaknesses', () => {
+    const guokao = BUILTIN_PRESETS.find((p) => p.id === 'preset-2025gk-ds-130')!;
+    const yijiu = BUILTIN_PRESETS[0];
+
+    const r1Inputs = {
+      'mod-25ds-politics': 4,
+      'mod-25ds-commonsense': 8, // weak commonsense (low ROI weight)
+      'mod-25ds-verbal': 3, // strong verbal (90%)
+      'mod-25ds-quant': 4,
+      'sub-25ds-graph': 5, // weak graph (50%)
+      'sub-25ds-def': 1,
+      'sub-25ds-analogy': 0,
+      'sub-25ds-logic': 2,
+      'mod-25ds-data': 6, // weak data analysis (70%, highest ROI weight 1.35!)
+    };
+    const r2Inputs = {
+      'mod-mwm5xsp6-05atn': 4,
+      'mod-mwm5xsp6-t7c4o': 7,
+      'mod-mwm5xsp6-ce9q8': 2,
+      'mod-mwm5xsp6-33g8b': 4,
+      'sub-mwm5xsp6-b39ik': 4,
+      'sub-mwm5xsp6-5fbqp': 1,
+      'sub-mwm5xsp6-qefnz': 0,
+      'sub-mwm5xsp6-nk401': 2,
+      'mod-mwm5xsp6-g4mo9': 5,
+    };
+
+    const records = [
+      {
+        id: 'rec-1',
+        paperName: '2025年国考地市级行测真题',
+        note: '资料分析最后没做完',
+        examDate: '2026-11-10',
+        createdAt: 1000,
+        updatedAt: 1000,
+        mode: 'wrong' as const,
+        inputs: r1Inputs,
+        presetSnapshot: guokao,
+        result: calculateScore(guokao, r1Inputs, 'wrong'),
+      },
+      {
+        id: 'rec-2',
+        paperName: '2025年省考模拟（壹玖）',
+        note: '图推卡住两题',
+        examDate: '2026-11-15',
+        createdAt: 2000,
+        updatedAt: 2000,
+        mode: 'wrong' as const,
+        inputs: r2Inputs,
+        presetSnapshot: yijiu,
+        result: calculateScore(yijiu, r2Inputs, 'wrong'),
+      },
+    ];
+
+    const report = analyzeHistoryRecords(records);
+    expect(report.recordCount).toBe(2);
+    // Verbal (91.7%) and Definition/Analogy should rank as strengths
+    expect(report.strengths.map((s) => s.moduleName)).toContain('言语理解与表达');
+    // Data analysis lost ~5.25 pts with 1.35 weight -> top priority
+    expect(report.priorities[0].moduleName).toBe('资料分析');
+    expect(report.leafModules.find((m) => m.moduleName === '图形推理')?.sampleCount).toBe(2);
+
+    const fp = buildRecordsFingerprint(records, 'xingce');
+    expect(fp).toContain('xingce::');
+    expect(fp).toContain('rec-1:1000');
+    expect(fp).toContain('rec-2:2000');
+
+    const digest = buildAiSummaryDigest(report, records, 'xingce');
+    expect(digest.examType).toBe('xingce');
+    expect((digest.recentPapers as unknown[]).length).toBe(2);
+    expect(getRecordExamCategory(records[0])).toBe('xingce');
+  });
+
+  it('infers zhice category and evaluates zhice presets cleanly', () => {
     const zhiceD = BUILTIN_PRESETS.find((p) => p.id === 'preset-sydw-d-100')!;
     const wrongInputs = {
       'mod-sydwd-commonsense': 5,
@@ -290,11 +370,134 @@ describe('zhice preset evaluation & category inference', () => {
     const res = calculateScore(zhiceD, wrongInputs, 'wrong');
     expect(res.maxScore).toBe(150);
     expect(res.totalQuestions).toBe(100);
-    expect(
-      getRecordExamCategory({
-        paperName: '2025年事业单位联考D类职测真题',
-        presetSnapshot: { ...zhiceD, category: undefined },
-      })
-    ).toBe('zhice');
+    const rec = {
+      id: 'rec-zhice-1',
+      paperName: '2025年事业单位联考D类职测真题',
+      note: '策略选择失分偏多',
+      examDate: '2026-11-19',
+      createdAt: 3000,
+      updatedAt: 3000,
+      mode: 'wrong' as const,
+      inputs: wrongInputs,
+      presetSnapshot: { ...zhiceD, category: undefined },
+      result: res,
+    };
+    expect(getRecordExamCategory(rec)).toBe('zhice');
+    const report = analyzeHistoryRecords([rec]);
+    expect(report.priorities[0].moduleName).toBe('策略选择');
+  });
+});
+
+describe('renderSafeMarkdown', () => {
+  it('renders headings, bold, lists, and escapes raw HTML against XSS', () => {
+    const md = [
+      '### 1. 【优势与基本盘】',
+      '* **核心模块**：`言语理解` 很稳',
+      '  * 子项说明',
+      '1. **第一点**：保持节奏',
+      '<script>alert(1)</script>',
+    ].join('\n');
+
+    const html = renderSafeMarkdown(md);
+    expect(html).toContain('<h3>1. 【优势与基本盘】</h3>');
+    expect(html).toContain('<ul>');
+    expect(html).toContain('<strong>核心模块</strong>');
+    expect(html).toContain('<code>言语理解</code>');
+    expect(html).toContain('<ol>');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+});
+
+describe('runAiAnalysis priority chain', () => {
+  it('falls back Zhipu (429) -> Cloudflare Gemma-4 (network err) -> Makers Google Gemini chain', async () => {
+    const calls: Array<{ url: string; model: string; body: Record<string, unknown> }> = [];
+    const origFetch = globalThis.fetch;
+
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const parsed = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+      calls.push({ url: String(url), model: String(parsed.model || ''), body: parsed });
+
+      if (String(url).includes('open.bigmodel.cn')) {
+        return new Response(JSON.stringify({ error: { code: '1305', message: 'rate limit' } }), {
+          status: 429,
+        });
+      }
+      if (String(url).includes('api.cloudflare.com')) {
+        throw new Error('network unreachable');
+      }
+      if (String(url).includes('ai-gateway.edgeone.link')) {
+        if (parsed.model === 'google/gemini-3.5-flash-lite') {
+          return new Response(
+            JSON.stringify({ choices: [{ message: { content: 'ok from gemini' } }] }),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify({ error: { message: 'busy' } }), { status: 502 });
+      }
+      return new Response('{}', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const res = await runAiAnalysis({
+        digest: { examType: 'xingce', summary: {}, modules: [], recentPapers: [] },
+        byok: { mode: 'server' },
+        serverEnv: {
+          ZHIPU_API_KEY: 'z-key',
+          CF_ACCOUNT_ID: 'cf-acc',
+          CF_API_TOKEN: 'cf-tok',
+          AI_GATEWAY_API_KEY: 'gw-key',
+        },
+      });
+
+      expect(res.provider).toBe('edgeone-makers-google');
+      expect(res.model).toBe('google/gemini-3.5-flash-lite');
+      expect(res.content).toBe('ok from gemini');
+      expect(calls[0].body.thinking).toEqual({ type: 'disabled' });
+      expect(calls[1].body.chat_template_kwargs).toEqual({ enable_thinking: false });
+      expect(calls.map((c) => c.model)).toEqual([
+        'glm-4.7-flash',
+        '@cf/google/gemma-4-26b-a4b-it',
+        'google/gemini-4-hydrogen',
+        'google/gemini-3.8-flash',
+        'google/gemini-3.6-flash',
+        'google/gemini-3.5-flash-lite',
+      ]);
+      expect(calls.some((c) => c.model.startsWith('@makers/'))).toBe(false);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('fails directly with real upstream error without fallback when serverModel is explicitly pinned', async () => {
+    const origFetch = globalThis.fetch;
+    let callCount = 0;
+
+    globalThis.fetch = vi.fn(async () => {
+      callCount += 1;
+      return new Response(
+        JSON.stringify({ error: { code: '1305', message: '该模型当前访问量过大，请您稍后再试' } }),
+        { status: 429 }
+      );
+    }) as typeof fetch;
+
+    try {
+      await expect(
+        runAiAnalysis({
+          digest: { examType: 'xingce', summary: {}, modules: [], recentPapers: [] },
+          serverModel: 'zhipu:glm-4.7-flash',
+          byok: { mode: 'server' },
+          serverEnv: {
+            ZHIPU_API_KEY: 'z-key',
+            CF_ACCOUNT_ID: 'cf-acc',
+            CF_API_TOKEN: 'cf-tok',
+            AI_GATEWAY_API_KEY: 'gw-key',
+          },
+        })
+      ).rejects.toThrow(/HTTP 429, code=1305.*该模型当前访问量过大/);
+      expect(callCount).toBe(1);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
 });

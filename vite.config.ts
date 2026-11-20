@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { mergeSyncPayloads, normalizePayload } from './shared/syncMerge.js';
+import { runAiAnalysis } from './shared/aiAnalysis.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOCAL_KV_FILE = path.resolve(__dirname, '.local-kv.json');
@@ -38,9 +39,19 @@ function readRequestBody(req) {
   });
 }
 
-function localMockKvPlugin() {
+function localApiPlugin(allEnv) {
+  const serverAiEnv = {
+    ZHIPU_API_KEY: (allEnv.ZHIPU_API_KEY || '').trim(),
+    ZHIPU_BASE_URL: (allEnv.ZHIPU_BASE_URL || '').trim(),
+    CF_ACCOUNT_ID: (allEnv.CF_ACCOUNT_ID || '').trim(),
+    CF_API_TOKEN: (allEnv.CF_API_TOKEN || '').trim(),
+    AI_GATEWAY_API_KEY: (allEnv.AI_GATEWAY_API_KEY || '').trim(),
+    AI_GATEWAY_BASE_URL: (allEnv.AI_GATEWAY_BASE_URL || '').trim(),
+    GEMINI_API_KEY: (allEnv.GEMINI_API_KEY || '').trim(),
+  };
+
   return {
-    name: 'local-mock-kv',
+    name: 'local-api-mock',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const urlPath = (req.url || '').split('?')[0];
@@ -51,8 +62,53 @@ function localMockKvPlugin() {
             platform: 'local-mock',
             kvReady: true,
             kvBindingName: '.local-kv.json',
+            aiReady: Boolean(
+              serverAiEnv.ZHIPU_API_KEY ||
+                (serverAiEnv.CF_ACCOUNT_ID && serverAiEnv.CF_API_TOKEN) ||
+                serverAiEnv.AI_GATEWAY_API_KEY ||
+                serverAiEnv.GEMINI_API_KEY
+            ),
             timestamp: Date.now(),
           });
+        }
+
+        if (urlPath === '/api/analyze') {
+          if (req.method === 'OPTIONS') {
+            res.statusCode = 204;
+            res.end();
+            return;
+          }
+          if (req.method === 'POST') {
+            try {
+              const bodyText = await readRequestBody(req);
+              const parsed = JSON.parse(bodyText);
+              const mode = String(req.headers['x-ai-mode'] || 'server').trim();
+              const byok =
+                mode === 'gemini-byok' || mode === 'openai-byok'
+                  ? {
+                      mode,
+                      apiKey: String(req.headers['x-ai-key'] || '').trim(),
+                      baseUrl: String(req.headers['x-ai-base-url'] || '').trim(),
+                      model: String(req.headers['x-ai-model'] || '').trim(),
+                    }
+                  : { mode: 'server' };
+
+              const result = await runAiAnalysis({
+                digest: parsed?.digest,
+                serverModel:
+                  typeof parsed?.serverModel === 'string' ? parsed.serverModel : 'auto',
+                byok,
+                serverEnv: serverAiEnv,
+              });
+              return sendJson(res, 200, { ok: true, ...result });
+            } catch (err) {
+              const status = Number(err?.status) || 502;
+              return sendJson(res, status >= 400 && status < 600 ? status : 502, {
+                error: 'AI_ANALYSIS_FAILED',
+                message: err instanceof Error ? err.message : 'AI 分析请求失败',
+              });
+            }
+          }
         }
 
         if (urlPath === '/api/sync') {
@@ -140,13 +196,13 @@ function injectEnvScriptsPlugin(env) {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = {
-    ...loadEnv(mode, __dirname, 'VITE_'),
+  const allEnv = {
+    ...loadEnv(mode, __dirname, ''),
     ...process.env,
   };
 
   return {
-    plugins: [vue(), localMockKvPlugin(), injectEnvScriptsPlugin(env)],
+    plugins: [vue(), localApiPlugin(allEnv), injectEnvScriptsPlugin(allEnv)],
     server: {
       port: 5173,
     },
