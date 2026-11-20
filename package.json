@@ -1,0 +1,25 @@
+{
+  "name": "xingce-calculator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "公考行测分数 WebUI 计算器（支持自定义分值预设、双模式算分、历史记录与 EdgeOne KV 多用户云同步）",
+  "type": "module",
+  "packageManager": "pnpm@10.25.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.75.0",
+    "vue": "^3.5.24"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8",
+    "vitest": "^4.0.8",
+    "vue-tsc": "^3.1.3"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm run build",
+  "outputDirectory": "./dist",
+  "nodeVersion": "22.11.0",
+  "headers": [
+    {
+      "source": "/api/*",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
+      ]
+    }
+  ]
+}

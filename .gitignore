@@ -1,0 +1,13 @@
+# Tencent Cloud EdgeOne
+.env
+.env.*
+.edgeone/*
+.tef_dist/*
+
+# Local dev & build artifacts
+node_modules/
+dist/
+.local-kv.json
+*.local
+.DS_Store
+coverage/
